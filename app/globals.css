@@ -1,26 +1,172 @@
-@import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&display=swap');
+
+/* ─── Design Tokens ──────────────────────────────────────────── */
+
+[data-theme="dark"] {
+  /* Surfaces */
+  --bg-page:      #0A1628;
+  --bg-nav:       #0D1F3C;
+  --bg-card:      #0D1F3C;
+  --bg-elevated:  #132035;
+  --bg-input:     #132035;
+
+  /* Borders */
+  --border:       #1A2F50;
+  --border-focus: #378ADD;
+
+  /* Text */
+  --text-primary:   #FFFFFF;
+  --text-secondary: #B8CCE0;
+  --text-muted:     #7A9CC5;
+  --text-dim:       #4A6FA5;
+  --text-ghost:     #2A3F5F;
+
+  /* Accent palette */
+  --accent-blue:     #378ADD;
+  --accent-green:    #2ECC71;
+  --accent-red:      #E74C3C;
+  --accent-orange:   #E67E73;
+  --accent-lgreen:   #58D68D;
+  --accent-darkred:  #C0392B;
+  --accent-purple:   #9B59B6;
+
+  /* Sentiment badge backgrounds */
+  --badge-vneg-bg:  #2D1515;
+  --badge-sneg-bg:  #2D1A1A;
+  --badge-neu-bg:   #0D2240;
+  --badge-spos-bg:  #0D2A1A;
+  --badge-vpos-bg:  #0A2218;
+
+  /* Intent badge backgrounds */
+  --intent-opinion-bg:    #0D2240;
+  --intent-inquiry-bg:    #1A2A0D;
+  --intent-suggestion-bg: #2A1A4A;
+  --intent-complaint-bg:  #2D1515;
+  --intent-spam-bg:       #1A1A1A;
+
+  /* Product badge backgrounds */
+  --product-pv-bg:     #1A3A6B;
+  --product-pocket-bg: #2A1A4A;
+  --product-pvb-bg:    #0D2A3A;
+
+  /* Misc */
+  --chart-stroke:  #0D1F3C;
+  --row-border:    #132035;
+  --bar-track:     #132035;
+  --nav-shadow:    0 1px 0 #1A2F50;
+  --card-shadow:   none;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+[data-theme="light"] {
+  /* Surfaces */
+  --bg-page:      #F0F4F8;
+  --bg-nav:       #FFFFFF;
+  --bg-card:      #FFFFFF;
+  --bg-elevated:  #F5F8FC;
+  --bg-input:     #F5F8FC;
+
+  /* Borders */
+  --border:       #E2EAF4;
+  --border-focus: #1A6EBD;
+
+  /* Text */
+  --text-primary:   #0A1628;
+  --text-secondary: #344B6B;
+  --text-muted:     #4A6FA5;
+  --text-dim:       #6B8CB5;
+  --text-ghost:     #CBD5E0;
+
+  /* Accent palette */
+  --accent-blue:     #1A6EBD;
+  --accent-green:    #27AE60;
+  --accent-red:      #C0392B;
+  --accent-orange:   #E74C3C;
+  --accent-lgreen:   #27AE60;
+  --accent-darkred:  #A93226;
+  --accent-purple:   #8E44AD;
+
+  /* Sentiment badge backgrounds */
+  --badge-vneg-bg:  #FDECEA;
+  --badge-sneg-bg:  #FEF0EE;
+  --badge-neu-bg:   #EEF5FD;
+  --badge-spos-bg:  #EAF7EF;
+  --badge-vpos-bg:  #E6F9EE;
+
+  /* Intent badge backgrounds */
+  --intent-opinion-bg:    #EEF5FD;
+  --intent-inquiry-bg:    #EEF9EE;
+  --intent-suggestion-bg: #F4EEF9;
+  --intent-complaint-bg:  #FDECEA;
+  --intent-spam-bg:       #F5F5F5;
+
+  /* Product badge backgrounds */
+  --product-pv-bg:     #EEF5FD;
+  --product-pocket-bg: #F4EEF9;
+  --product-pvb-bg:    #E8F8F9;
+
+  /* Misc */
+  --chart-stroke:  #FFFFFF;
+  --row-border:    #F0F4F8;
+  --bar-track:     #EEF2F8;
+  --nav-shadow:    0 1px 0 #E2EAF4;
+  --card-shadow:   0 1px 4px rgba(10,22,40,0.06);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* ─── Global Base ─────────────────────────────────────────────── */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  /* fallback if no data-theme yet (prevents FOUC on first load) */
+  --bg-page:    #0A1628;
+  --bg-nav:     #0D1F3C;
+  --bg-card:    #0D1F3C;
+  --border:     #1A2F50;
+  --text-primary: #FFFFFF;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
+  padding: 0;
+  background: var(--bg-page);
+  color: var(--text-primary);
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background 0.2s ease, color 0.2s ease;
 }
+
+/* Smooth card / nav transitions */
+* {
+  transition-property: background-color, border-color, color, box-shadow;
+  transition-duration: 0.18s;
+  transition-timing-function: ease;
+}
+
+/* Native date/select inputs inherit theme */
+input[type="date"],
+input[type="text"],
+select {
+  color-scheme: dark;
+}
+
+[data-theme="light"] input[type="date"],
+[data-theme="light"] input[type="text"],
+[data-theme="light"] select {
+  color-scheme: light;
+}
+
+/* Scrollbar (dark) */
+[data-theme="dark"] ::-webkit-scrollbar        { width: 6px; }
+[data-theme="dark"] ::-webkit-scrollbar-track  { background: #0A1628; }
+[data-theme="dark"] ::-webkit-scrollbar-thumb  { background: #1A2F50; border-radius: 3px; }
+
+/* Scrollbar (light) */
+[data-theme="light"] ::-webkit-scrollbar        { width: 6px; }
+[data-theme="light"] ::-webkit-scrollbar-track  { background: #F0F4F8; }
+[data-theme="light"] ::-webkit-scrollbar-thumb  { background: #C9D9EE; border-radius: 3px; }
