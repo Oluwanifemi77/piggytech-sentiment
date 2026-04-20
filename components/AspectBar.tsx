@@ -6,14 +6,14 @@ interface Props {
   selectedAspect?: string | null;
 }
 
-const ASPECT_COLORS = [
-  'var(--accent-primary)',
-  'var(--accent-blue)',
-  'var(--accent-indigo)',
-  'var(--accent-purple)',
-  'var(--accent-orange)',
-  'var(--accent-lgreen)',
-  'var(--accent-blue)',
+const ASPECT_HEX = [
+  '#EA417D',
+  '#0D60D8',
+  '#6B46C1',
+  '#10B259',
+  '#DD6B20',
+  '#3182CE',
+  '#D43570',
 ];
 
 export default function AspectBar({ data, onAspectClick, selectedAspect }: Props) {
@@ -23,18 +23,19 @@ export default function AspectBar({ data, onAspectClick, selectedAspect }: Props
   const max = sorted[0]?.[1] || 1;
 
   return (
-    <div className="card" style={{ borderRadius: '16px' }}>
-      <div style={{ marginBottom: '18px' }}>
-        <div className="text-label">Top Aspects</div>
-        <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '3px' }}>
+    <div className="pv-card">
+      {/* Header */}
+      <div style={{ marginBottom: '20px' }}>
+        <div className="pv-card-label">Top Aspects</div>
+        <div style={{ fontSize: '12px', color: 'var(--text-dim)', marginTop: '3px', fontWeight: '500' }}>
           Click any aspect to drill down
         </div>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         {sorted.map(([aspect, count], i) => {
           const isSelected = selectedAspect === aspect;
-          const color = ASPECT_COLORS[i % ASPECT_COLORS.length];
+          const color = ASPECT_HEX[i % ASPECT_HEX.length];
           const pct = Math.round((count / max) * 100);
 
           return (
@@ -46,42 +47,43 @@ export default function AspectBar({ data, onAspectClick, selectedAspect }: Props
                 alignItems: 'center',
                 gap: '10px',
                 cursor: 'pointer',
-                opacity: selectedAspect && !isSelected ? 0.35 : 1,
-                transition: 'opacity 0.2s ease',
-                padding: '6px 8px',
-                borderRadius: '8px',
+                opacity: selectedAspect && !isSelected ? 0.30 : 1,
+                transition: 'opacity 0.2s ease, background 0.15s ease',
+                padding: '7px 10px',
+                borderRadius: '10px',
                 background: isSelected ? 'var(--accent-primary-bg)' : 'transparent',
                 border: isSelected ? '1px solid var(--accent-primary)' : '1px solid transparent',
-                margin: '0 -8px',
+                margin: '0 -10px',
               }}
             >
               <div style={{
                 fontSize: '11px',
                 color: isSelected ? 'var(--accent-primary)' : 'var(--text-muted)',
-                width: '120px',
+                width: '114px',
                 textAlign: 'right',
                 flexShrink: 0,
                 fontWeight: isSelected ? '700' : '500',
                 lineHeight: 1.3,
+                letterSpacing: isSelected ? '-0.01em' : '0',
               }}>
                 {aspect.replace(/_/g, ' ')}
               </div>
 
-              <div style={{ flex: 1, background: 'var(--bar-track)', borderRadius: '4px', height: '7px', overflow: 'hidden' }}>
+              <div className="pv-bar-track" style={{ flex: 1, height: '7px' }}>
                 <div style={{
                   width: `${pct}%`,
                   height: '100%',
                   background: isSelected ? 'var(--accent-primary)' : color,
                   borderRadius: '4px',
                   transition: 'width 0.5s ease, background 0.2s ease',
-                  opacity: isSelected ? 1 : 0.75,
+                  opacity: isSelected ? 1 : 0.78,
                 }} />
               </div>
 
               <div style={{
                 fontSize: '12px',
                 color: isSelected ? 'var(--accent-primary)' : 'var(--text-primary)',
-                width: '28px',
+                width: '26px',
                 fontWeight: '700',
                 textAlign: 'right',
                 flexShrink: 0,
@@ -94,21 +96,15 @@ export default function AspectBar({ data, onAspectClick, selectedAspect }: Props
       </div>
 
       {selectedAspect && (
-        <button
-          className="btn-link"
-          onClick={() => onAspectClick?.(null)}
-          style={{
-            display: 'block',
-            textAlign: 'center',
-            marginTop: '12px',
-            paddingTop: '12px',
-            borderTop: '1px solid var(--border)',
-            width: '100%',
-            fontSize: '11px',
-          }}
-        >
-          Clear selection ×
-        </button>
+        <div style={{ paddingTop: '14px', marginTop: '6px', borderTop: '1px solid var(--border)' }}>
+          <button
+            className="pv-btn pv-btn-ghost pv-btn-sm"
+            onClick={() => onAspectClick?.(null)}
+            style={{ width: '100%', justifyContent: 'center', fontSize: '12px' }}
+          >
+            Clear selection
+          </button>
+        </div>
       )}
     </div>
   );

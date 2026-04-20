@@ -37,7 +37,7 @@ export default function RootLayout({
       </head>
       <body style={{ fontFamily: "var(--font-plus-jakarta, 'Plus Jakarta Sans', sans-serif)" }}>
         {/* Top accent gradient bar */}
-        <div className="accent-bar" />
+        <div className="pv-accent-bar" />
         <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>
