@@ -1,10 +1,9 @@
 /**
  * /api/cron/route.ts
  *
- * Automated pipeline — scrape X → clean → label with Gemini → append to CSV
+ * Automated pipeline — scrape X → clean → label with Gemini → save to Neon DB
  *
- * Trigger this endpoint every 30 minutes via cron-job.org, Vercel Cron,
- * GitHub Actions, or any external scheduler.
+ * Trigger this endpoint every 30 minutes via cron-job.org or any scheduler.
  *
  * Security: Set CRON_SECRET in your env. Pass it as:
  *   Header:  x-cron-secret: <your-secret>
@@ -13,22 +12,21 @@
  * Required env vars:
  *   APIFY_API_TOKEN   — Apify account token
  *   GEMINI_API_KEY    — Google AI Studio API key
- *   CRON_SECRET       — A random string you choose (e.g. openssl rand -hex 32)
+ *   CRON_SECRET       — A random string you choose
+ *   DATABASE_URL      — Neon Postgres connection string
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { ApifyClient } from 'apify-client';
-import fs from 'fs';
-import path from 'path';
-import { parse } from 'csv-parse/sync';
+import { getDb } from '@/lib/db';
 
-// ─── Constants ──────────────────────────────────────────────────────────────
+// ─── Constants ───────────────────────────────────────────────────────────────
 
 const BRAND_KEYWORDS = [
   'piggyvest', 'piggy vest', '@piggyvest', 'pocket app',
   '@usepocket', 'usepocket', 'pvb', 'piggyvest for business',
   'investify', 'piggypoints', 'flex dollar', 'flex naira',
-  'safelock', 'piggypoints', 'savings report',
+  'safelock', 'savings report',
 ];
 
 const SEARCH_QUERIES = [
@@ -45,26 +43,10 @@ const SENTIMENT_LABELS = [
 
 const INTENT_LABELS = ['opinion', 'complaint', 'inquiry', 'suggestion', 'spam'];
 
-// Actor used by the existing /api/scrape route — keep consistent
 const APIFY_ACTOR = 'CJdippxWmn9uRfooo';
 
-// CSV output path — same file the dashboard reads from.
-// In production on Railway, DATA_FILE_PATH points to the persistent volume (/data/...).
-// Locally it falls back to public/labelled_tweets_gemini.csv.
-const DATA_FILE =
-  process.env.DATA_FILE_PATH ??
-  path.join(process.cwd(), 'public', 'labelled_tweets_gemini.csv');
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
-// CSV column order must match what /api/data reads
-const CSV_COLUMNS = [
-  'tweet_id', 'tweet_text', 'author_username', 'author_name',
-  'products_detected', 'overall_sentiment', 'intent',
-  'aspect_product', 'aspect', 'aspect_sentiment', 'created_at',
-];
-
-// ─── Helpers ────────────────────────────────────────────────────────────────
-
-/** Extract tweet creation time from a Twitter snowflake ID */
 function snowflakeToDatetime(tweetId: string): string {
   try {
     const clean = tweetId.replace('tweet-', '');
@@ -75,47 +57,7 @@ function snowflakeToDatetime(tweetId: string): string {
   }
 }
 
-/** Escape a single CSV field value */
-function csvField(value: unknown): string {
-  const v = String(value ?? '');
-  return v.includes(',') || v.includes('"') || v.includes('\n')
-    ? `"${v.replace(/"/g, '""')}"`
-    : v;
-}
-
-/** Serialize one row to a CSV line */
-function toCsvLine(row: Record<string, unknown>): string {
-  return CSV_COLUMNS.map(col => csvField(row[col])).join(',');
-}
-
-/** Load already-seen tweet IDs from the CSV to avoid duplicates */
-function loadExistingIds(): Set<string> {
-  try {
-    if (!fs.existsSync(DATA_FILE)) return new Set();
-    const content = fs.readFileSync(DATA_FILE, 'utf-8');
-    const records: Record<string, string>[] = parse(content, {
-      columns: true,
-      skip_empty_lines: true,
-    });
-    return new Set(records.map(r => String(r.tweet_id)));
-  } catch {
-    return new Set();
-  }
-}
-
-/** Append rows to the CSV (creates file with header if missing) */
-function appendToCsv(rows: Record<string, unknown>[]): void {
-  if (rows.length === 0) return;
-
-  const fileExists = fs.existsSync(DATA_FILE);
-  const header = fileExists ? '' : CSV_COLUMNS.join(',') + '\n';
-  const lines = rows.map(toCsvLine).join('\n') + '\n';
-
-  fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true });
-  fs.appendFileSync(DATA_FILE, header + lines, 'utf-8');
-}
-
-// ─── Step 1: Scrape ─────────────────────────────────────────────────────────
+// ─── Step 1: Scrape ───────────────────────────────────────────────────────────
 
 interface RawTweet {
   tweet_id: string;
@@ -123,7 +65,6 @@ interface RawTweet {
   created_at: string;
   author_username: string;
   author_name: string;
-  author_followers: number;
 }
 
 async function scrapeTweets(since: string, until: string): Promise<RawTweet[]> {
@@ -131,7 +72,7 @@ async function scrapeTweets(since: string, until: string): Promise<RawTweet[]> {
 
   const run = await client.actor(APIFY_ACTOR).call({
     searchTerms: SEARCH_QUERIES,
-    maxItems: 50,       // keep well within Apify free quota per run
+    maxItems: 20,       // keep well within Vercel's 60s function limit
     lang: 'en',
     since,
     until,
@@ -161,14 +102,24 @@ async function scrapeTweets(since: string, until: string): Promise<RawTweet[]> {
       created_at: snowflakeToDatetime(tweet_id),
       author_username: t.author?.userName || t.user?.screen_name || '',
       author_name: t.author?.displayName || t.user?.name || '',
-      author_followers: t.author?.followers || t.user?.followers_count || 0,
     });
   }
 
   return results;
 }
 
-// ─── Step 2: Label with Gemini ───────────────────────────────────────────────
+// ─── Step 2: Check existing tweet IDs ────────────────────────────────────────
+
+async function getExistingIds(tweetIds: string[]): Promise<Set<string>> {
+  if (tweetIds.length === 0) return new Set();
+  const sql = getDb();
+  const rows = await sql`
+    SELECT DISTINCT tweet_id FROM tweets WHERE tweet_id = ANY(${tweetIds})
+  `;
+  return new Set(rows.map((r: any) => r.tweet_id as string));
+}
+
+// ─── Step 3: Label with Gemini ────────────────────────────────────────────────
 
 interface AspectLabel {
   aspect_product: string;
@@ -213,7 +164,7 @@ INTENT OPTIONS: opinion, complaint, inquiry, suggestion, spam
 
 RULES:
 1. Only detect products clearly mentioned
-2. Only label aspects clearly discussed
+2. only label aspects clearly discussed
 3. overall_sentiment = general tone of whole tweet
 4. aspect_sentiment = sentiment toward that specific aspect
 5. One entry per aspect detected
@@ -237,7 +188,7 @@ Return ONLY valid JSON, no explanation, no markdown:
 }
 `.trim();
 
-async function labelTweet(tweet: RawTweet): Promise<Record<string, unknown>[]> {
+async function labelTweet(tweet: RawTweet): Promise<Record<string, string>[]> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error('GEMINI_API_KEY not set');
 
@@ -258,20 +209,15 @@ async function labelTweet(tweet: RawTweet): Promise<Record<string, unknown>[]> {
       const data = await res.json() as any;
       responseText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? '';
 
-      // Strip markdown code fences if Gemini wraps with them
       if (responseText.startsWith('```')) {
         responseText = responseText.split('```')[1];
         if (responseText.startsWith('json')) responseText = responseText.slice(4);
         responseText = responseText.trim();
       }
-
       break;
     } catch (err) {
-      if (attempt < 2) {
-        await new Promise(r => setTimeout(r, 2 ** attempt * 1000));
-      } else {
-        throw err;
-      }
+      if (attempt < 2) await new Promise(r => setTimeout(r, 2 ** attempt * 1000));
+      else throw err;
     }
   }
 
@@ -287,10 +233,9 @@ async function labelTweet(tweet: RawTweet): Promise<Record<string, unknown>[]> {
 
   const intent = INTENT_LABELS.includes(result.intent) ? result.intent : 'opinion';
   const overall = SENTIMENT_LABELS.includes(result.overall_sentiment)
-    ? result.overall_sentiment
-    : 'neutral';
+    ? result.overall_sentiment : 'neutral';
 
-  const rows: Record<string, unknown>[] = [];
+  const rows: Record<string, string>[] = [];
 
   if (result.aspects?.length) {
     for (const asp of result.aspects) {
@@ -305,13 +250,11 @@ async function labelTweet(tweet: RawTweet): Promise<Record<string, unknown>[]> {
         aspect_product: asp.aspect_product ?? '',
         aspect: asp.aspect ?? '',
         aspect_sentiment: SENTIMENT_LABELS.includes(asp.aspect_sentiment)
-          ? asp.aspect_sentiment
-          : 'neutral',
+          ? asp.aspect_sentiment : 'neutral',
         created_at: tweet.created_at,
       });
     }
   } else if (result.products_detected?.length) {
-    // Tweet mentions a product but no specific aspect identified
     rows.push({
       tweet_id: tweet.tweet_id,
       tweet_text: tweet.tweet_text,
@@ -330,10 +273,39 @@ async function labelTweet(tweet: RawTweet): Promise<Record<string, unknown>[]> {
   return rows;
 }
 
-// ─── Main Handler ────────────────────────────────────────────────────────────
+// ─── Step 4: Save to Neon DB ─────────────────────────────────────────────────
+
+async function insertRows(rows: Record<string, string>[]): Promise<number> {
+  if (rows.length === 0) return 0;
+  const sql = getDb();
+  let saved = 0;
+
+  for (const row of rows) {
+    const result = await sql`
+      INSERT INTO tweets
+        (tweet_id, tweet_text, author_username, author_name,
+         products_detected, overall_sentiment, intent,
+         aspect_product, aspect, aspect_sentiment, created_at)
+      VALUES
+        (${row.tweet_id}, ${row.tweet_text}, ${row.author_username},
+         ${row.author_name}, ${row.products_detected}, ${row.overall_sentiment},
+         ${row.intent}, ${row.aspect_product}, ${row.aspect},
+         ${row.aspect_sentiment}, ${row.created_at})
+      ON CONFLICT (tweet_id, aspect) DO NOTHING
+      RETURNING id
+    `;
+    if (result.length > 0) saved++;
+  }
+
+  return saved;
+}
+
+// ─── Main Handler ─────────────────────────────────────────────────────────────
+
+export const maxDuration = 60; // Vercel function timeout (seconds)
 
 export async function GET(req: NextRequest) {
-  // ── Security ──────────────────────────────────────────────────────────────
+  // ── Security ────────────────────────────────────────────────────────────────
   const cronSecret = process.env.CRON_SECRET;
   if (cronSecret) {
     const provided =
@@ -348,16 +320,13 @@ export async function GET(req: NextRequest) {
   const log: string[] = [];
 
   try {
-    // ── Date range: last 35 minutes (slight overlap avoids gaps) ────────────
+    // ── Date range: last 35 min (slight overlap avoids gaps) ────────────────
     const now = new Date();
     const until = now.toISOString().slice(0, 10);
-    const since = new Date(now.getTime() - 35 * 60 * 1000)
-      .toISOString()
-      .slice(0, 10);
-
+    const since = new Date(now.getTime() - 35 * 60 * 1000).toISOString().slice(0, 10);
     log.push(`Scraping ${since} → ${until}`);
 
-    // ── Step 1: Scrape ───────────────────────────────────────────────────────
+    // ── Scrape ───────────────────────────────────────────────────────────────
     let rawTweets: RawTweet[] = [];
     try {
       rawTweets = await scrapeTweets(since, until);
@@ -369,33 +338,26 @@ export async function GET(req: NextRequest) {
 
     if (rawTweets.length === 0) {
       return NextResponse.json({
-        ok: true,
-        scraped: 0,
-        labelled: 0,
-        saved: 0,
-        log,
+        ok: true, scraped: 0, labelled: 0, saved: 0, log,
         elapsed_ms: Date.now() - startedAt,
       });
     }
 
-    // ── Step 2: Deduplicate against existing data ────────────────────────────
-    const existingIds = loadExistingIds();
+    // ── Dedup against DB ─────────────────────────────────────────────────────
+    const scrapedIds = rawTweets.map(t => t.tweet_id);
+    const existingIds = await getExistingIds(scrapedIds);
     const newTweets = rawTweets.filter(t => !existingIds.has(t.tweet_id));
-    log.push(`${newTweets.length} new tweets after dedup (skipped ${rawTweets.length - newTweets.length} already seen)`);
+    log.push(`${newTweets.length} new tweets after dedup (${rawTweets.length - newTweets.length} already in DB)`);
 
     if (newTweets.length === 0) {
       return NextResponse.json({
-        ok: true,
-        scraped: rawTweets.length,
-        labelled: 0,
-        saved: 0,
-        log,
+        ok: true, scraped: rawTweets.length, labelled: 0, saved: 0, log,
         elapsed_ms: Date.now() - startedAt,
       });
     }
 
-    // ── Step 3: Label with Gemini ────────────────────────────────────────────
-    const allRows: Record<string, unknown>[] = [];
+    // ── Label with Gemini ────────────────────────────────────────────────────
+    const allRows: Record<string, string>[] = [];
     let labelledCount = 0;
     let skippedCount = 0;
 
@@ -408,8 +370,7 @@ export async function GET(req: NextRequest) {
         } else {
           skippedCount++;
         }
-        // Pace Gemini calls to avoid rate-limit errors
-        await new Promise(r => setTimeout(r, 800));
+        await new Promise(r => setTimeout(r, 600));
       } catch (err: any) {
         log.push(`Label failed for ${tweet.tweet_id}: ${err.message}`);
         skippedCount++;
@@ -418,9 +379,9 @@ export async function GET(req: NextRequest) {
 
     log.push(`Gemini labelled ${labelledCount} tweets, skipped ${skippedCount} (no product detected)`);
 
-    // ── Step 4: Append to CSV ────────────────────────────────────────────────
-    appendToCsv(allRows);
-    log.push(`Appended ${allRows.length} rows to CSV`);
+    // ── Save to DB ───────────────────────────────────────────────────────────
+    const saved = await insertRows(allRows);
+    log.push(`Inserted ${saved} rows into Neon DB`);
 
     const elapsed = Date.now() - startedAt;
     log.push(`Done in ${(elapsed / 1000).toFixed(1)}s`);
@@ -430,7 +391,7 @@ export async function GET(req: NextRequest) {
       scraped: rawTweets.length,
       new: newTweets.length,
       labelled: labelledCount,
-      saved: allRows.length,
+      saved,
       log,
       elapsed_ms: elapsed,
     });
@@ -441,5 +402,4 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// Also accept POST so Vercel Cron can hit it (Vercel uses POST for cron routes)
 export { GET as POST };

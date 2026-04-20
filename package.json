@@ -5,11 +5,12 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "node scripts/seed-data.js && next start",
+    "start": "next start",
     "lint": "eslint"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
+    "@neondatabase/serverless": "^1.1.0",
     "apify-client": "^2.22.3",
     "csv-parse": "^6.2.1",
     "date-fns": "^4.1.0",
