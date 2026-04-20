@@ -17,7 +17,6 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { ApifyClient } from 'apify-client';
 import { getDb } from '@/lib/db';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -43,7 +42,9 @@ const SENTIMENT_LABELS = [
 
 const INTENT_LABELS = ['opinion', 'complaint', 'inquiry', 'suggestion', 'spam'];
 
+// Apify actor ID — same one used by /api/scrape
 const APIFY_ACTOR = 'CJdippxWmn9uRfooo';
+const APIFY_BASE = 'https://api.apify.com/v2';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -68,22 +69,52 @@ interface RawTweet {
 }
 
 async function scrapeTweets(since: string, until: string): Promise<RawTweet[]> {
-  const client = new ApifyClient({ token: process.env.APIFY_API_TOKEN });
+  const token = process.env.APIFY_API_TOKEN;
 
-  const run = await client.actor(APIFY_ACTOR).call({
-    searchTerms: SEARCH_QUERIES,
-    maxItems: 20,       // keep well within Vercel's 60s function limit
-    lang: 'en',
-    since,
-    until,
-  });
+  // Start the actor run and block up to 30s waiting for it to finish.
+  // Using direct HTTP so no apify-client / proxy-agent native modules are needed.
+  const startRes = await fetch(
+    `${APIFY_BASE}/acts/${APIFY_ACTOR}/runs?token=${token}&waitForFinish=30`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        searchTerms: SEARCH_QUERIES,
+        maxItems: 20,
+        lang: 'en',
+        since,
+        until,
+      }),
+    }
+  );
 
-  const { items } = await client.dataset(run.defaultDatasetId).listItems();
+  if (!startRes.ok) {
+    const body = await startRes.text();
+    throw new Error(`Apify start failed (${startRes.status}): ${body.slice(0, 200)}`);
+  }
+
+  const { data: runData } = await startRes.json() as { data: any };
+  const datasetId: string = runData.defaultDatasetId;
+
+  if (!datasetId) {
+    throw new Error(`Apify returned no datasetId. Run status: ${runData.status}`);
+  }
+
+  // Fetch dataset items (may be partial if run didn't finish in 30s — still useful)
+  const dataRes = await fetch(
+    `${APIFY_BASE}/datasets/${datasetId}/items?token=${token}&limit=20`
+  );
+
+  if (!dataRes.ok) {
+    throw new Error(`Apify dataset fetch failed (${dataRes.status})`);
+  }
+
+  const items: any[] = await dataRes.json();
 
   const seen = new Set<string>();
   const results: RawTweet[] = [];
 
-  for (const t of items as any[]) {
+  for (const t of items) {
     const tweet_id = String(t.id || t.rest_id || '');
     if (!tweet_id || seen.has(tweet_id)) continue;
 
