@@ -11,8 +11,8 @@ const plusJakarta = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: 'PiggyTech Sentiment Dashboard',
-  description: 'Q1 2026 social sentiment analysis for PiggyVest products',
+  title: 'PiggyTech Sentiment · Dashboard',
+  description: 'Real-time social sentiment analysis for PiggyVest, Pocket & PVB',
 };
 
 export default function RootLayout({
@@ -36,6 +36,8 @@ export default function RootLayout({
         />
       </head>
       <body style={{ fontFamily: "var(--font-plus-jakarta, 'Plus Jakarta Sans', sans-serif)" }}>
+        {/* Top accent gradient bar */}
+        <div className="accent-bar" />
         <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>
