@@ -1,30 +1,28 @@
 'use client';
 import { useState } from 'react';
 
-// Accent text colours (same in both modes — they're semantic)
 const BADGE_COLOR: Record<string, string> = {
-  very_negative:     '#E74C3C',
-  slightly_negative: '#E67E73',
-  neutral:           '#378ADD',
-  slightly_positive: '#58D68D',
-  very_positive:     '#2ECC71',
+  very_negative:     '#F05555',
+  slightly_negative: '#F08850',
+  neutral:           '#5B9CF6',
+  slightly_positive: '#4DE09C',
+  very_positive:     '#00C571',
 };
 
 const INTENT_COLOR: Record<string, string> = {
-  opinion:    '#378ADD',
-  inquiry:    '#82C97A',
-  suggestion: '#9B59B6',
-  complaint:  '#E74C3C',
-  spam:       '#6B8CB5',
+  opinion:    '#5B9CF6',
+  inquiry:    '#00C571',
+  suggestion: '#A78BFA',
+  complaint:  '#F05555',
+  spam:       '#637A98',
 };
 
 const PRODUCT_COLOR: Record<string, string> = {
-  PiggyVest:              '#378ADD',
-  Pocket:                 '#9B59B6',
-  PiggyVest_for_Business: '#3498DB',
+  PiggyVest:              '#5B9CF6',
+  Pocket:                 '#A78BFA',
+  PiggyVest_for_Business: '#00C571',
 };
 
-// Badge background CSS variable names (theme-aware)
 const BADGE_BG_VAR: Record<string, string> = {
   very_negative:     'var(--badge-vneg-bg)',
   slightly_negative: 'var(--badge-sneg-bg)',
@@ -48,11 +46,23 @@ const PRODUCT_BG_VAR: Record<string, string> = {
 };
 
 const DOT_COLOR: Record<string, string> = {
-  very_negative:     '#C0392B',
-  slightly_negative: '#E67E73',
-  neutral:           '#378ADD',
-  slightly_positive: '#58D68D',
-  very_positive:     '#2ECC71',
+  very_negative:     '#F05555',
+  slightly_negative: '#F08850',
+  neutral:           '#5B9CF6',
+  slightly_positive: '#4DE09C',
+  very_positive:     '#00C571',
+};
+
+const selectStyle: React.CSSProperties = {
+  border: '1px solid var(--border)',
+  borderRadius: '10px',
+  padding: '7px 12px',
+  fontSize: '12px',
+  color: 'var(--text-primary)',
+  background: 'var(--bg-input)',
+  cursor: 'pointer',
+  outline: 'none',
+  fontFamily: 'inherit',
 };
 
 export default function TweetTable({ data }: { data: any[] }) {
@@ -70,31 +80,15 @@ export default function TweetTable({ data }: { data: any[] }) {
   const paginated = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
 
-  const selectStyle: React.CSSProperties = {
-    border: '1px solid var(--border)',
-    borderRadius: '8px',
-    padding: '6px 12px',
-    fontSize: '12px',
-    color: 'var(--text-primary)',
-    background: 'var(--bg-input)',
-    cursor: 'pointer',
-    outline: 'none',
-  };
-
   return (
-    <div style={{
-      background: 'var(--bg-card)',
-      borderRadius: '12px',
-      padding: '20px',
-      border: '1px solid var(--border)',
-      boxShadow: 'var(--card-shadow)',
-    }}>
+    <div className="card" style={{ borderRadius: '16px' }}>
+      {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
         <div>
-          <div style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-            Tweets
+          <div className="text-label">Recent Tweets</div>
+          <div style={{ fontSize: '12px', color: 'var(--text-dim)', marginTop: '3px' }}>
+            {filtered.length.toLocaleString()} results
           </div>
-          <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '2px' }}>{filtered.length} results</div>
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
           <select value={intentFilter} onChange={e => { setIntentFilter(e.target.value); setPage(0); }} style={selectStyle}>
@@ -116,97 +110,96 @@ export default function TweetTable({ data }: { data: any[] }) {
         </div>
       </div>
 
-      {paginated.map((row, i) => {
-        const dotColor = DOT_COLOR[row.overall_sentiment] || 'var(--text-dim)';
-        return (
-          <div key={i} style={{
-            padding: '12px 0',
-            borderBottom: '1px solid var(--row-border)',
-            display: 'flex',
-            gap: '12px',
-            alignItems: 'flex-start',
-          }}>
-            <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: dotColor, flexShrink: 0, marginTop: '6px' }} />
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: '4px' }}>
-                {row.tweet_text}
+      {/* Tweet list */}
+      {paginated.length === 0 ? (
+        <div style={{ textAlign: 'center', color: 'var(--text-dim)', fontSize: '13px', padding: '40px 0' }}>
+          No tweets match your filters
+        </div>
+      ) : (
+        <div>
+          {paginated.map((row, i) => {
+            const dotColor = DOT_COLOR[row.overall_sentiment] || 'var(--text-dim)';
+            return (
+              <div key={i} className="tweet-row">
+                <div style={{
+                  width: '8px', height: '8px', borderRadius: '50%',
+                  background: dotColor, flexShrink: 0, marginTop: '6px',
+                }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{
+                    fontSize: '13px', color: 'var(--text-secondary)',
+                    lineHeight: 1.65, marginBottom: '6px',
+                  }}>
+                    {row.tweet_text}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    {row.author_username && (
+                      <span style={{ fontSize: '11px', color: 'var(--accent-primary)', fontWeight: '600' }}>
+                        @{row.author_username}
+                      </span>
+                    )}
+                    {row.created_at && (
+                      <>
+                        <span style={{ fontSize: '10px', color: 'var(--text-ghost)' }}>·</span>
+                        <span style={{ fontSize: '10px', color: 'var(--text-dim)' }}>
+                          {row.created_at.slice(0, 16)}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-end', flexShrink: 0 }}>
+                  {row.aspect_product && (
+                    <span className="badge" style={{
+                      background: PRODUCT_BG_VAR[row.aspect_product] || 'var(--bg-elevated)',
+                      color: PRODUCT_COLOR[row.aspect_product] || 'var(--text-muted)',
+                    }}>
+                      {row.aspect_product === 'PiggyVest_for_Business' ? 'PVB' : row.aspect_product}
+                    </span>
+                  )}
+                  <span className="badge" style={{
+                    background: BADGE_BG_VAR[row.overall_sentiment] || 'var(--bg-elevated)',
+                    color: BADGE_COLOR[row.overall_sentiment] || 'var(--text-muted)',
+                  }}>
+                    {row.overall_sentiment?.replace(/_/g, ' ')}
+                  </span>
+                  {row.intent && (
+                    <span className="badge" style={{
+                      background: INTENT_BG_VAR[row.intent] || 'var(--bg-elevated)',
+                      color: INTENT_COLOR[row.intent] || 'var(--text-dim)',
+                    }}>
+                      {row.intent}
+                    </span>
+                  )}
+                  {row.aspect && (
+                    <span className="badge" style={{ background: 'var(--bg-elevated)', color: 'var(--text-dim)' }}>
+                      {row.aspect.replace(/_/g, ' ')}
+                    </span>
+                  )}
+                </div>
               </div>
-              {row.author_username && (
-                <span style={{ fontSize: '10px', color: 'var(--text-dim)' }}>@{row.author_username}</span>
-              )}
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-end', flexShrink: 0 }}>
-              {row.aspect_product && (
-                <span style={{
-                  fontSize: '10px', padding: '2px 8px', borderRadius: '20px',
-                  background: PRODUCT_BG_VAR[row.aspect_product] || 'var(--bg-elevated)',
-                  color: PRODUCT_COLOR[row.aspect_product] || 'var(--text-muted)',
-                  whiteSpace: 'nowrap', fontWeight: '600',
-                }}>
-                  {row.aspect_product === 'PiggyVest_for_Business' ? 'PVB' : row.aspect_product}
-                </span>
-              )}
-              <span style={{
-                fontSize: '10px', padding: '2px 8px', borderRadius: '20px',
-                background: BADGE_BG_VAR[row.overall_sentiment] || 'var(--bg-elevated)',
-                color: BADGE_COLOR[row.overall_sentiment] || 'var(--text-muted)',
-                whiteSpace: 'nowrap', fontWeight: '600',
-              }}>
-                {row.overall_sentiment?.replace(/_/g, ' ')}
-              </span>
-              {row.intent && (
-                <span style={{
-                  fontSize: '10px', padding: '2px 8px', borderRadius: '20px',
-                  background: INTENT_BG_VAR[row.intent] || 'var(--bg-elevated)',
-                  color: INTENT_COLOR[row.intent] || 'var(--text-dim)',
-                  whiteSpace: 'nowrap',
-                }}>
-                  {row.intent}
-                </span>
-              )}
-              {row.aspect && (
-                <span style={{
-                  fontSize: '10px', padding: '2px 8px', borderRadius: '20px',
-                  background: 'var(--bg-elevated)',
-                  color: 'var(--text-dim)',
-                  whiteSpace: 'nowrap',
-                }}>
-                  {row.aspect?.replace(/_/g, ' ')}
-                </span>
-              )}
-            </div>
-          </div>
-        );
-      })}
+            );
+          })}
+        </div>
+      )}
 
+      {/* Pagination */}
       {totalPages > 1 && (
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', marginTop: '16px' }}>
+        <div className="pagination">
           <button
+            className="page-btn"
             onClick={() => setPage(p => Math.max(0, p - 1))}
             disabled={page === 0}
-            style={{
-              padding: '6px 14px', borderRadius: '6px',
-              border: '1px solid var(--border)',
-              background: 'var(--bg-elevated)',
-              color: page === 0 ? 'var(--text-ghost)' : 'var(--text-primary)',
-              cursor: page === 0 ? 'default' : 'pointer',
-              fontSize: '12px', fontWeight: '600',
-            }}
           >
             ← Prev
           </button>
-          <span style={{ fontSize: '12px', color: 'var(--text-dim)' }}>{page + 1} / {totalPages}</span>
+          <span style={{ fontSize: '12px', color: 'var(--text-dim)', fontWeight: '600' }}>
+            {page + 1} <span style={{ color: 'var(--text-ghost)' }}>/ {totalPages}</span>
+          </span>
           <button
+            className="page-btn"
             onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
             disabled={page === totalPages - 1}
-            style={{
-              padding: '6px 14px', borderRadius: '6px',
-              border: '1px solid var(--border)',
-              background: 'var(--bg-elevated)',
-              color: page === totalPages - 1 ? 'var(--text-ghost)' : 'var(--text-primary)',
-              cursor: page === totalPages - 1 ? 'default' : 'pointer',
-              fontSize: '12px', fontWeight: '600',
-            }}
           >
             Next →
           </button>
