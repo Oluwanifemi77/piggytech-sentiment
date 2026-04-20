@@ -306,11 +306,11 @@ export const maxDuration = 60; // Vercel function timeout (seconds)
 
 export async function GET(req: NextRequest) {
   // ── Security ────────────────────────────────────────────────────────────────
-  const cronSecret = process.env.CRON_SECRET;
+  const cronSecret = process.env.CRON_SECRET?.trim();
   if (cronSecret) {
     const provided =
-      req.headers.get('x-cron-secret') ??
-      new URL(req.url).searchParams.get('secret');
+      (req.headers.get('x-cron-secret') ??
+      new URL(req.url).searchParams.get('secret'))?.trim();
     if (provided !== cronSecret) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
