@@ -12,7 +12,7 @@ const plusJakarta = Plus_Jakarta_Sans({
 
 export const metadata: Metadata = {
   title: 'PiggyTech Sentiment · Dashboard',
-  description: 'Real-time social sentiment analysis for PiggyVest, Pocket & PVB',
+  description: 'Real-time social sentiment analysis for PiggyVest, Pocket & PiggyVest for Business.',
 };
 
 export default function RootLayout({

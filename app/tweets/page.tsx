@@ -533,7 +533,7 @@ export default function TweetsPage() {
               PiggyTech Sentiment
             </span>
           </div>
-          <Link href="/" style={{ fontSize: '11px', color: 'var(--accent-primary)', fontWeight: '600', textDecoration: 'none' }}>
+          <Link href="/dashboard" style={{ fontSize: '11px', color: 'var(--accent-primary)', fontWeight: '600', textDecoration: 'none' }}>
             ← Back to Dashboard
           </Link>
         </div>
