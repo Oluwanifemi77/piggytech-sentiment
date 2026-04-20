@@ -48,8 +48,12 @@ const INTENT_LABELS = ['opinion', 'complaint', 'inquiry', 'suggestion', 'spam'];
 // Actor used by the existing /api/scrape route — keep consistent
 const APIFY_ACTOR = 'CJdippxWmn9uRfooo';
 
-// CSV output path — same file the dashboard reads from
-const DATA_FILE = path.join(process.cwd(), 'public', 'labelled_tweets_gemini.csv');
+// CSV output path — same file the dashboard reads from.
+// In production on Railway, DATA_FILE_PATH points to the persistent volume (/data/...).
+// Locally it falls back to public/labelled_tweets_gemini.csv.
+const DATA_FILE =
+  process.env.DATA_FILE_PATH ??
+  path.join(process.cwd(), 'public', 'labelled_tweets_gemini.csv');
 
 // CSV column order must match what /api/data reads
 const CSV_COLUMNS = [
