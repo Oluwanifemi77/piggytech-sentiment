@@ -55,11 +55,11 @@ const DOT_COLOR: Record<string, string> = {
   very_positive:     'var(--sent-vpos)',
 };
 
-// Convert "YYYY-MM-DD HH:MM:SS" → "YYYY-MM-DDTHH:MM"
+// Convert "YYYY-MM-DD HH:MM:SS" to "YYYY-MM-DDTHH:MM"
 function toDatetimeLocal(s: string): string {
   return s ? s.slice(0, 16).replace(' ', 'T') : '';
 }
-// Convert datetime-local "YYYY-MM-DDTHH:MM" → "YYYY-MM-DD HH:MM"
+// Convert datetime-local "YYYY-MM-DDTHH:MM" to "YYYY-MM-DD HH:MM"
 function fromDatetimeLocal(s: string): string {
   return s ? s.replace('T', ' ') : '';
 }
@@ -148,7 +148,7 @@ export default function TweetsPage() {
     <div className="pv-loading">
       <div className="pv-spinner" />
       <div style={{ fontSize: '13px', color: 'var(--text-muted)', fontWeight: '600' }}>
-        Loading tweets…
+        Loading tweets...
       </div>
     </div>
   );
@@ -156,7 +156,10 @@ export default function TweetsPage() {
   return (
     <div style={{ background: 'var(--bg-page)', minHeight: '100vh', paddingTop: '3px' }}>
 
-      {/* ── Navbar ──────────────────────────────────────────────────── */}
+      {/* Accent bar */}
+      <div className="pv-accent-bar" />
+
+      {/* Navbar */}
       <nav className="pv-nav">
         <div className="pv-wrap pv-nav-inner">
 
@@ -176,7 +179,9 @@ export default function TweetsPage() {
 
             <nav className="pv-nav-links">
               <Link href="/" className="pv-nav-link">Dashboard</Link>
-              <span className="pv-nav-link active">Tweet Browser</span>
+              <Link href="/external" className="pv-nav-link">External</Link>
+              <Link href="/compare" className="pv-nav-link">Compare</Link>
+              <span className="pv-nav-link active">Tweets</span>
             </nav>
           </div>
 
@@ -210,7 +215,7 @@ export default function TweetsPage() {
         </div>
       </nav>
 
-      {/* ── Mobile menu drawer ─────────────────────────────────────── */}
+      {/* Mobile menu drawer */}
       {menuOpen && (
         <>
           <div
@@ -236,7 +241,7 @@ export default function TweetsPage() {
                 onClick={() => setMenuOpen(false)}
                 aria-label="Close menu"
               >
-                ×
+                x
               </button>
             </div>
 
@@ -248,11 +253,27 @@ export default function TweetsPage() {
                 onClick={() => setMenuOpen(false)}
               >
                 Dashboard
-                <span style={{ fontSize: '14px' }}>→</span>
+                <span style={{ fontSize: '14px' }}>{'->'}</span>
+              </Link>
+              <Link
+                href="/external"
+                className="pv-mobile-menu-link"
+                onClick={() => setMenuOpen(false)}
+              >
+                External
+                <span style={{ fontSize: '14px' }}>{'->'}</span>
+              </Link>
+              <Link
+                href="/compare"
+                className="pv-mobile-menu-link"
+                onClick={() => setMenuOpen(false)}
+              >
+                Compare
+                <span style={{ fontSize: '14px' }}>{'->'}</span>
               </Link>
               <span className="pv-mobile-menu-link active">
                 Tweet Browser
-                <span style={{ fontSize: '11px', color: 'var(--text-dim)', fontWeight: 500 }}>you’re here</span>
+                <span style={{ fontSize: '11px', color: 'var(--text-dim)', fontWeight: 500 }}>you are here</span>
               </span>
             </div>
 
@@ -288,11 +309,11 @@ export default function TweetsPage() {
         </>
       )}
 
-      {/* ── Main ────────────────────────────────────────────────────── */}
+      {/* Main */}
       <div className="pv-main">
         <div className="pv-wrap">
 
-          {/* ── Filters card ──────────────────────────────────────── */}
+          {/* Filters card */}
           <div className="pv-filters pv-section">
 
             {/* Filters header row */}
@@ -322,7 +343,7 @@ export default function TweetsPage() {
             <div className="pv-filter-row" style={{ marginBottom: '0' }}>
               <input
                 type="text"
-                placeholder="Search tweet text…"
+                placeholder="Search tweet text..."
                 value={search}
                 onChange={e => { setSearch(e.target.value); setPage(0); }}
                 className="pv-input"
@@ -377,7 +398,7 @@ export default function TweetsPage() {
                 onChange={e => { setStartDate(e.target.value); setPage(0); }}
                 className="pv-input"
               />
-              <span style={{ color: 'var(--text-dim)', fontSize: '13px', fontWeight: '700' }}>→</span>
+              <span style={{ color: 'var(--text-dim)', fontSize: '13px', fontWeight: '700' }}>{'->'}</span>
               <input
                 type="datetime-local"
                 value={endDate}
@@ -391,7 +412,7 @@ export default function TweetsPage() {
                   className="pv-btn pv-btn-danger pv-btn-sm"
                   onClick={() => { setStartDate(''); setEndDate(''); setPage(0); }}
                 >
-                  Clear ×
+                  Clear x
                 </button>
               )}
             </div>
@@ -408,7 +429,7 @@ export default function TweetsPage() {
                 <div style={{ position: 'relative', flex: '1 1 210px', minWidth: '180px', maxWidth: '280px' }}>
                   <input
                     type="text"
-                    placeholder="Search author to exclude…"
+                    placeholder="Search author to exclude..."
                     value={authorSearch}
                     onChange={e => setAuthorSearch(e.target.value)}
                     className="pv-input"
@@ -465,7 +486,7 @@ export default function TweetsPage() {
                     <span
                       onClick={() => setExcludedAuthors(prev => prev.filter(x => x !== a))}
                       style={{ marginLeft: '5px', fontWeight: '800' }}
-                    >×</span>
+                    >x</span>
                   </span>
                 ))}
               </div>
@@ -473,7 +494,7 @@ export default function TweetsPage() {
 
           </div>
 
-          {/* ── Tweet list card ───────────────────────────────────── */}
+          {/* Tweet list card */}
           <div className="pv-card pv-section">
             <div style={{
               display: 'flex', justifyContent: 'space-between',
@@ -483,7 +504,7 @@ export default function TweetsPage() {
               <div style={{ minWidth: 0 }}>
                 <div className="pv-card-label">Tweet Stream</div>
                 <div style={{ fontSize: '12px', color: 'var(--text-dim)', marginTop: '3px', fontWeight: '500' }}>
-                  {filtered.length.toLocaleString()} tweets · page {page + 1} of {totalPages || 1}
+                  {filtered.length.toLocaleString()} tweets - page {page + 1} of {totalPages || 1}
                 </div>
               </div>
               {activeFilters > 0 && (
@@ -500,7 +521,7 @@ export default function TweetsPage() {
 
             {paginated.length === 0 ? (
               <div style={{ textAlign: 'center', color: 'var(--text-dim)', fontSize: '13px', padding: '56px 0' }}>
-                <div style={{ fontSize: '28px', marginBottom: '12px', opacity: 0.35 }}>◎</div>
+                <div style={{ fontSize: '28px', marginBottom: '12px', opacity: 0.35 }}>{'◎'}</div>
                 No tweets match your filters
               </div>
             ) : (
@@ -519,7 +540,7 @@ export default function TweetsPage() {
                         )}
                         {row.created_at && (
                           <>
-                            <span style={{ fontSize: '10px', color: 'var(--text-ghost)' }}>·</span>
+                            <span style={{ fontSize: '10px', color: 'var(--text-ghost)' }}>{'·'}</span>
                             <span className="pv-tweet-time">{row.created_at.slice(0, 16)}</span>
                           </>
                         )}
@@ -567,7 +588,7 @@ export default function TweetsPage() {
                   onClick={() => setPage(p => Math.max(0, p - 1))}
                   disabled={page === 0}
                 >
-                  ← Prev
+                  Prev
                 </button>
                 <span className="pv-page-info">
                   {page + 1} <span style={{ color: 'var(--text-ghost)' }}>/ {totalPages}</span>
@@ -577,13 +598,13 @@ export default function TweetsPage() {
                   onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
                   disabled={page === totalPages - 1}
                 >
-                  Next →
+                  Next
                 </button>
               </div>
             )}
           </div>
 
-          {/* ── Footer ────────────────────────────────────────────── */}
+          {/* Footer */}
           <div className="pv-footer">
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <img
@@ -594,12 +615,20 @@ export default function TweetsPage() {
               />
               <span style={{ fontSize: '12px', color: 'var(--text-dim)', fontWeight: '600' }}>Sentiment</span>
             </div>
-            <Link href="/" style={{
-              fontSize: '12px', color: 'var(--accent-primary)',
-              fontWeight: '700', textDecoration: 'none',
-            }}>
-              ← Back to Dashboard
-            </Link>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
+              <Link href="/" style={{
+                fontSize: '12px', color: 'var(--accent-primary)',
+                fontWeight: '700', textDecoration: 'none',
+              }}>
+                Back to Dashboard
+              </Link>
+              <Link href="/compare" style={{
+                fontSize: '12px', color: 'var(--accent-purple)',
+                fontWeight: '700', textDecoration: 'none',
+              }}>
+                Compare products
+              </Link>
+            </div>
           </div>
 
         </div>

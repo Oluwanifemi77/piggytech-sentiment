@@ -7,9 +7,10 @@ import TweetTable from '@/components/TweetTable';
 import { useTheme } from '@/components/ThemeProvider';
 import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
-import { isPiggyTech } from '@/lib/products';
+import { isPiggyTech, getDisplayName } from '@/lib/products';
 
-// Sentiment dot colours — kept as CSS vars so they respect light/dark theme
+const EXT_COLORS = ['#F0903A', '#9F7AEA', '#4DB89E', '#E88C1A', '#3D8EF0', '#FC5959', '#48BB78'];
+
 const SENT_COLORS: Record<string, string> = {
   very_negative:     'var(--sent-vneg)',
   slightly_negative: 'var(--sent-sneg)',
@@ -18,22 +19,20 @@ const SENT_COLORS: Record<string, string> = {
   very_positive:     'var(--sent-vpos)',
 };
 
-// Convert "YYYY-MM-DD HH:MM:SS" → "YYYY-MM-DDTHH:MM" (datetime-local format)
 function toDatetimeLocal(s: string): string {
   return s ? s.slice(0, 16).replace(' ', 'T') : '';
 }
-
-// Convert datetime-local "YYYY-MM-DDTHH:MM" → "YYYY-MM-DD HH:MM" for comparison
 function fromDatetimeLocal(s: string): string {
   return s ? s.replace('T', ' ') : '';
 }
 
-export default function Home() {
+export default function ExternalPage() {
   const { theme, toggle } = useTheme();
   const [data, setData]                     = useState<any[]>([]);
   const [loading, setLoading]               = useState(true);
   const [product, setProduct]               = useState('all');
   const [intent, setIntent]                 = useState('all');
+  const [sentiment, setSentiment]           = useState('all');
   const [selectedAspect, setSelectedAspect] = useState<string | null>(null);
   const [startDate, setStartDate]           = useState('');
   const [endDate, setEndDate]               = useState('');
@@ -49,48 +48,60 @@ export default function Home() {
       .catch(err => { console.error('Fetch error:', err); setLoading(false); });
   }, []);
 
-  // Lock body scroll while drawer open
   useEffect(() => {
     if (typeof document === 'undefined') return;
     document.body.style.overflow = menuOpen ? 'hidden' : '';
     return () => { document.body.style.overflow = ''; };
   }, [menuOpen]);
 
-  // Filter base data to PiggyTech only
-  const pvData = useMemo(() => data.filter(d => isPiggyTech(d.aspect_product)), [data]);
+  // External tweets = aspect_product NOT in PIGGTECH_SET
+  const extData = useMemo(() => data.filter(d => d.aspect_product && !isPiggyTech(d.aspect_product)), [data]);
 
-  // Date bounds for datetime-local min/max (from pvData)
+  // Date bounds
   const dateBounds = useMemo(() => {
-    const dates = pvData.map(d => d.created_at).filter(Boolean).sort();
+    const dates = extData.map(d => d.created_at).filter(Boolean).sort();
     return {
       min: toDatetimeLocal(dates[0] || ''),
       max: toDatetimeLocal(dates[dates.length - 1] || ''),
     };
-  }, [pvData]);
+  }, [extData]);
+
+  // Unique external products for dropdown
+  const extProducts = useMemo(() =>
+    [...new Set(extData.map(d => d.aspect_product).filter(Boolean))].sort() as string[],
+    [extData]
+  );
+
+  // Build consistent color map for external products
+  const extColorMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    extProducts.forEach((p, i) => { map[p] = EXT_COLORS[i % EXT_COLORS.length]; });
+    return map;
+  }, [extProducts]);
 
   const filtered = useMemo(() => {
     const normStart = fromDatetimeLocal(startDate);
     const normEnd   = endDate ? fromDatetimeLocal(endDate) + ':59' : '';
-    return pvData.filter(d => {
-      if (product !== 'all' && !d.products_detected?.includes(product)) return false;
+    return extData.filter(d => {
+      if (product !== 'all' && d.aspect_product !== product) return false;
       if (intent !== 'all' && d.intent !== intent) return false;
+      if (sentiment !== 'all' && d.overall_sentiment !== sentiment) return false;
       if (selectedAspect && d.aspect !== selectedAspect) return false;
       if (normStart && d.created_at < normStart) return false;
       if (normEnd   && d.created_at > normEnd)   return false;
       return true;
     });
-  }, [pvData, product, intent, selectedAspect, startDate, endDate]);
+  }, [extData, product, intent, sentiment, selectedAspect, startDate, endDate]);
 
   const aspectTweets = useMemo(() => {
     if (!selectedAspect) return [];
-    return pvData.filter(d => d.aspect === selectedAspect).slice(0, 10);
-  }, [pvData, selectedAspect]);
+    return extData.filter(d => d.aspect === selectedAspect).slice(0, 10);
+  }, [extData, selectedAspect]);
 
   const heroStats = useMemo(() => {
     const pos  = filtered.filter(d => d.overall_sentiment?.includes('positive')).length;
-    const neg  = filtered.filter(d => d.overall_sentiment?.includes('negative')).length;
     const total = filtered.length || 1;
-    return { pos, neg, total, posRate: Math.round((pos / total) * 100) };
+    return { pos, total, posRate: Math.round((pos / total) * 100) };
   }, [filtered]);
 
   if (loading) return (
@@ -112,7 +123,6 @@ export default function Home() {
       <nav className="pv-nav">
         <div className="pv-wrap pv-nav-inner">
 
-          {/* Brand + links */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '24px', minWidth: 0 }}>
             <div className="pv-logo">
               <img
@@ -127,15 +137,24 @@ export default function Home() {
             </div>
 
             <nav className="pv-nav-links">
-              <span className="pv-nav-link active">Dashboard</span>
-              <Link href="/external" className="pv-nav-link">External</Link>
+              <Link href="/" className="pv-nav-link">Dashboard</Link>
+              <span className="pv-nav-link active">External</span>
               <Link href="/compare" className="pv-nav-link">Compare</Link>
               <Link href="/tweets" className="pv-nav-link">Tweets</Link>
             </nav>
           </div>
 
-          {/* Desktop controls */}
           <div className="pv-nav-controls pv-hide-mobile">
+            <select value={sentiment} onChange={e => setSentiment(e.target.value)}
+              className="pv-select" style={{ borderRadius: '10px', padding: '7px 12px', fontSize: '12px' }}>
+              <option value="all">All Sentiments</option>
+              <option value="very_negative">Very Negative</option>
+              <option value="slightly_negative">Slightly Negative</option>
+              <option value="neutral">Neutral</option>
+              <option value="slightly_positive">Slightly Positive</option>
+              <option value="very_positive">Very Positive</option>
+            </select>
+
             <select value={intent} onChange={e => setIntent(e.target.value)}
               className="pv-select" style={{ borderRadius: '10px', padding: '7px 12px', fontSize: '12px' }}>
               <option value="all">All Intents</option>
@@ -148,13 +167,11 @@ export default function Home() {
 
             <select value={product} onChange={e => setProduct(e.target.value)}
               className="pv-select" style={{ borderRadius: '10px', padding: '7px 12px', fontSize: '12px' }}>
-              <option value="all">All Products</option>
-              <option value="PiggyVest">PiggyVest</option>
-              <option value="Pocket">Pocket</option>
-              <option value="PiggyVest_for_Business">PiggyVest for Business</option>
+              <option value="all">All External Products</option>
+              {extProducts.map(p => (
+                <option key={p} value={p}>{getDisplayName(p)}</option>
+              ))}
             </select>
-
-            <span className="pv-badge pv-badge-live">Live</span>
 
             <button className="pv-theme-btn" onClick={toggle}
               title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>
@@ -163,7 +180,6 @@ export default function Home() {
             </button>
           </div>
 
-          {/* Mobile hamburger */}
           <button
             className={`pv-hamburger${menuOpen ? ' is-open' : ''}`}
             onClick={() => setMenuOpen(v => !v)}
@@ -198,42 +214,24 @@ export default function Home() {
                   Sentiment
                 </span>
               </div>
-              <button
-                className="pv-mobile-menu-close"
-                onClick={() => setMenuOpen(false)}
-                aria-label="Close menu"
-              >
-                ×
-              </button>
+              <button className="pv-mobile-menu-close" onClick={() => setMenuOpen(false)} aria-label="Close menu">×</button>
             </div>
 
             <div className="pv-mobile-menu-section">
               <div className="pv-mobile-menu-section-label">Navigate</div>
-              <span className="pv-mobile-menu-link active">
+              <Link href="/" className="pv-mobile-menu-link" onClick={() => setMenuOpen(false)}>
                 Dashboard
-                <span style={{ fontSize: '11px', color: 'var(--text-dim)', fontWeight: 500 }}>you're here</span>
-              </span>
-              <Link
-                href="/external"
-                className="pv-mobile-menu-link"
-                onClick={() => setMenuOpen(false)}
-              >
-                External
                 <span style={{ fontSize: '14px' }}>→</span>
               </Link>
-              <Link
-                href="/compare"
-                className="pv-mobile-menu-link"
-                onClick={() => setMenuOpen(false)}
-              >
+              <span className="pv-mobile-menu-link active">
+                External
+                <span style={{ fontSize: '11px', color: 'var(--text-dim)', fontWeight: 500 }}>you're here</span>
+              </span>
+              <Link href="/compare" className="pv-mobile-menu-link" onClick={() => setMenuOpen(false)}>
                 Compare
                 <span style={{ fontSize: '14px' }}>→</span>
               </Link>
-              <Link
-                href="/tweets"
-                className="pv-mobile-menu-link"
-                onClick={() => setMenuOpen(false)}
-              >
+              <Link href="/tweets" className="pv-mobile-menu-link" onClick={() => setMenuOpen(false)}>
                 Tweet Browser
                 <span style={{ fontSize: '14px' }}>→</span>
               </Link>
@@ -241,12 +239,15 @@ export default function Home() {
 
             <div className="pv-mobile-menu-section">
               <div className="pv-mobile-menu-section-label">Filters</div>
-              <select
-                value={intent}
-                onChange={e => setIntent(e.target.value)}
-                className="pv-select"
-                style={{ borderRadius: '12px', width: '100%' }}
-              >
+              <select value={sentiment} onChange={e => setSentiment(e.target.value)} className="pv-select" style={{ borderRadius: '12px', width: '100%' }}>
+                <option value="all">All Sentiments</option>
+                <option value="very_negative">Very Negative</option>
+                <option value="slightly_negative">Slightly Negative</option>
+                <option value="neutral">Neutral</option>
+                <option value="slightly_positive">Slightly Positive</option>
+                <option value="very_positive">Very Positive</option>
+              </select>
+              <select value={intent} onChange={e => setIntent(e.target.value)} className="pv-select" style={{ borderRadius: '12px', width: '100%' }}>
                 <option value="all">All Intents</option>
                 <option value="opinion">Opinion</option>
                 <option value="inquiry">Inquiry</option>
@@ -254,58 +255,47 @@ export default function Home() {
                 <option value="complaint">Complaint</option>
                 <option value="spam">Spam</option>
               </select>
-              <select
-                value={product}
-                onChange={e => setProduct(e.target.value)}
-                className="pv-select"
-                style={{ borderRadius: '12px', width: '100%' }}
-              >
-                <option value="all">All Products</option>
-                <option value="PiggyVest">PiggyVest</option>
-                <option value="Pocket">Pocket</option>
-                <option value="PiggyVest_for_Business">PiggyVest for Business</option>
+              <select value={product} onChange={e => setProduct(e.target.value)} className="pv-select" style={{ borderRadius: '12px', width: '100%' }}>
+                <option value="all">All External Products</option>
+                {extProducts.map(p => (
+                  <option key={p} value={p}>{getDisplayName(p)}</option>
+                ))}
               </select>
             </div>
 
             <div className="pv-mobile-menu-footer">
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
-                <span className="pv-badge pv-badge-live">Live</span>
-                <button
-                  className="pv-theme-btn"
-                  onClick={toggle}
-                  style={{ minHeight: '40px' }}
-                >
-                  <span style={{ fontSize: '14px', lineHeight: 1 }}>{theme === 'dark' ? '☀' : '☾'}</span>
-                  {theme === 'dark' ? 'Light mode' : 'Dark mode'}
-                </button>
-              </div>
+              <button className="pv-theme-btn" onClick={toggle} style={{ minHeight: '40px' }}>
+                <span style={{ fontSize: '14px', lineHeight: 1 }}>{theme === 'dark' ? '☀' : '☾'}</span>
+                {theme === 'dark' ? 'Light mode' : 'Dark mode'}
+              </button>
             </div>
           </aside>
         </>
       )}
 
       {/* ── Hero ────────────────────────────────────────────────────── */}
-      <div className="pv-hero">
+      <div className="pv-hero" style={{ background: 'var(--tint-yellow)' }}>
         <div className="pv-wrap">
           <div className="pv-hero-inner">
-
             <div style={{ minWidth: 0 }}>
               <div className="pv-hero-eyebrow">
-                <h1 className="pv-hero-title" style={{ marginBottom: 0 }}>Brand Sentiment Overview</h1>
-                <span className="pv-badge pv-badge-period">PiggyTech</span>
-                <span className="pv-badge" style={{ background: 'var(--accent-primary-bg)', color: 'var(--accent-primary)', border: '1.5px solid transparent', fontSize: '10px' }}>Q1 2026</span>
+                <h1 className="pv-hero-title" style={{ marginBottom: 0 }}>External Product Intelligence</h1>
+                <span className="pv-badge" style={{
+                  background: 'rgba(240,144,58,0.15)',
+                  color: 'var(--accent-orange)',
+                  border: '1.5px solid var(--accent-orange)',
+                }}>Competitors</span>
               </div>
               <p className="pv-hero-sub">
-                Real-time social intelligence across PiggyTech products only — PiggyVest, Pocket,
-                and PiggyVest for Business. Scraped from X and labelled with AI.
+                Social sentiment for external and competitor products mentioned alongside PiggyTech.
+                Excludes all PiggyTech products — shows only third-party brands.
               </p>
             </div>
 
-            {/* Quick stats */}
             <div className="pv-hero-stats">
               {[
-                { label: 'PiggyTech Records', val: pvData.length.toLocaleString(),     color: 'var(--accent-primary)' },
-                { label: 'Showing',           val: filtered.length.toLocaleString(), color: 'var(--accent-blue)' },
+                { label: 'External Records',  val: extData.length.toLocaleString(),    color: 'var(--accent-orange)' },
+                { label: 'Showing',           val: filtered.length.toLocaleString(),   color: 'var(--accent-blue)' },
                 { label: 'Positivity',        val: `${heroStats.posRate}%`,
                   color: heroStats.posRate >= 50 ? 'var(--accent-green)' : 'var(--accent-red)' },
               ].map(stat => (
@@ -315,7 +305,6 @@ export default function Home() {
                 </div>
               ))}
             </div>
-
           </div>
         </div>
       </div>
@@ -381,8 +370,8 @@ export default function Home() {
           {/* ── Aspect drill-down ─────────────────────────────────── */}
           {selectedAspect && (
             <div className="pv-card pv-fade-up pv-section" style={{
-              borderColor: 'var(--accent-primary)',
-              boxShadow: 'var(--accent-primary-glow)',
+              borderColor: 'var(--accent-orange)',
+              boxShadow: '0 4px 20px rgba(240,144,58,0.15)',
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '18px' }}>
                 <div style={{ minWidth: 0, flex: 1 }}>
@@ -429,7 +418,7 @@ export default function Home() {
           )}
 
           {/* ── Product sentiment ─────────────────────────────────── */}
-          <ProductBar data={filtered} showSubProducts={true} />
+          <ProductBar data={filtered} showSubProducts={false} productColors={extColorMap} />
 
           {/* ── Tweet stream ──────────────────────────────────────── */}
           <div className="pv-section">
@@ -451,23 +440,17 @@ export default function Home() {
               <span style={{ fontSize: '12px', color: 'var(--text-dim)' }}>
                 Powered by Gemini 2.0 Flash · Scraped via Apify
               </span>
-              <Link href="/external" style={{
-                fontSize: '12px', color: 'var(--accent-orange)',
+              <Link href="/" style={{
+                fontSize: '12px', color: 'var(--accent-primary)',
                 fontWeight: '700', textDecoration: 'none',
               }}>
-                External products →
+                ← Dashboard
               </Link>
               <Link href="/compare" style={{
                 fontSize: '12px', color: 'var(--accent-purple)',
                 fontWeight: '700', textDecoration: 'none',
               }}>
-                Compare →
-              </Link>
-              <Link href="/tweets" style={{
-                fontSize: '12px', color: 'var(--accent-primary)',
-                fontWeight: '700', textDecoration: 'none',
-              }}>
-                View all tweets →
+                Compare products →
               </Link>
             </div>
           </div>
