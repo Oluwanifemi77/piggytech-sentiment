@@ -62,14 +62,14 @@ export default function ProductBar({ data }: { data: any[] }) {
           return (
             <div key={product}>
               {/* Product header row */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div className="pv-product-head">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
                   <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: dotColor, flexShrink: 0 }} />
                   <span style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)' }}>
                     {displayName}
                   </span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                   <span style={{ fontSize: '11px', color: 'var(--text-dim)', fontWeight: '500' }}>
                     {total.toLocaleString()} mentions
                   </span>

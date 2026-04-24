@@ -88,6 +88,7 @@ export default function Scorecards({ data }: { data: any[] }) {
         accentBg="var(--accent-primary-bg)"
         icon={<GridIcon />}
       />
+
       <MetricCard
         label="Positive Tweets"
         value={positive.toLocaleString()}

@@ -60,7 +60,7 @@ export default function SentimentPie({ data }: { data: any[] }) {
         </div>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+      <div className="pv-pie-layout">
         {/* Donut chart */}
         <div style={{ position: 'relative', flexShrink: 0 }}>
           <PieChart width={154} height={154}>
@@ -108,7 +108,7 @@ export default function SentimentPie({ data }: { data: any[] }) {
         </div>
 
         {/* Legend with progress bars */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <div className="pv-pie-legend">
           {ORDER.filter(key => counts[key]).map(key => {
             const pct = Math.round((counts[key] / total) * 100);
             return (
