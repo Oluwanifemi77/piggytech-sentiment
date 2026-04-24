@@ -46,8 +46,8 @@ echo -e "${GREEN}✓ App uploaded to Railway${NC}"
 
 # ── 5. Set environment variables ──────────────────────────────
 echo -e "\n${YELLOW}[5/6] Setting environment variables...${NC}"
-railway variables --set "APIFY_API_TOKEN=apify_api_dLrdodgBJYHMjqyNuB4lEQ6vGu8LEs2UmVqG"
-railway variables --set "GEMINI_API_KEY=AIzaSyCNFpqgHVHWLan_aJeGtsk4bp-lGxZZ8m0"
+railway variables --set "APIFY_API_TOKEN=$APIFY_API_TOKEN"
+railway variables --set "GEMINI_API_KEY=$GEMINI_API_KEY"
 railway variables --set "CRON_SECRET=7e023a41a84f694a1e1db943d04e67e336ab3479a3ab2c7e9ee843ccb10c7894"
 railway variables --set "NODE_ENV=production"
 railway variables --set "DATA_FILE_PATH=/data/labelled_tweets_gemini.csv"

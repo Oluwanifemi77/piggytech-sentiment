@@ -75,8 +75,8 @@ echo -e "${GREEN}✓ Deployed!${NC}"
 echo ""
 echo -e "${YELLOW}[5/5] Setting environment variables on Vercel...${NC}"
 echo "$DATABASE_URL"           | vercel env add DATABASE_URL production
-echo "apify_api_dLrdodgBJYHMjqyNuB4lEQ6vGu8LEs2UmVqG" | vercel env add APIFY_API_TOKEN production
-echo "AIzaSyCNFpqgHVHWLan_aJeGtsk4bp-lGxZZ8m0"         | vercel env add GEMINI_API_KEY production
+echo "$APIFY_API_TOKEN" | vercel env add APIFY_API_TOKEN production
+echo "$GEMINI_API_KEY"  | vercel env add GEMINI_API_KEY production
 echo "7e023a41a84f694a1e1db943d04e67e336ab3479a3ab2c7e9ee843ccb10c7894" | vercel env add CRON_SECRET production
 
 echo ""
