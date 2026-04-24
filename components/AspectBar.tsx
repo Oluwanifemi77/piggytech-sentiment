@@ -56,16 +56,14 @@ export default function AspectBar({ data, onAspectClick, selectedAspect }: Props
                 margin: '0 -10px',
               }}
             >
-              <div style={{
-                fontSize: '11px',
-                color: isSelected ? 'var(--accent-primary)' : 'var(--text-muted)',
-                width: '114px',
-                textAlign: 'right',
-                flexShrink: 0,
-                fontWeight: isSelected ? '700' : '500',
-                lineHeight: 1.3,
-                letterSpacing: isSelected ? '-0.01em' : '0',
-              }}>
+              <div
+                className="pv-aspect-label"
+                style={{
+                  color: isSelected ? 'var(--accent-primary)' : 'var(--text-muted)',
+                  fontWeight: isSelected ? 700 : 500,
+                  letterSpacing: isSelected ? '-0.01em' : '0',
+                }}
+              >
                 {aspect.replace(/_/g, ' ')}
               </div>
 

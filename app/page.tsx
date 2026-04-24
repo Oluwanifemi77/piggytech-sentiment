@@ -36,6 +36,7 @@ export default function Home() {
   const [selectedAspect, setSelectedAspect] = useState<string | null>(null);
   const [startDate, setStartDate]           = useState('');
   const [endDate, setEndDate]               = useState('');
+  const [menuOpen, setMenuOpen]             = useState(false);
 
   useEffect(() => {
     fetch('/api/data')
@@ -46,6 +47,13 @@ export default function Home() {
       .then(json => { setData(json.data || []); setLoading(false); })
       .catch(err => { console.error('Fetch error:', err); setLoading(false); });
   }, []);
+
+  // Lock body scroll while drawer open
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    document.body.style.overflow = menuOpen ? 'hidden' : '';
+    return () => { document.body.style.overflow = ''; };
+  }, [menuOpen]);
 
   // Date bounds for datetime-local min/max
   const dateBounds = useMemo(() => {
@@ -98,18 +106,16 @@ export default function Home() {
         <div className="pv-wrap pv-nav-inner">
 
           {/* Brand + links */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '24px', minWidth: 0 }}>
             <div className="pv-logo">
-              <div className="pv-logo-mark">
-                <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                  <rect x="2" y="9" width="3" height="7" rx="1" fill="white"/>
-                  <rect x="7" y="5" width="3" height="11" rx="1" fill="white"/>
-                  <rect x="12" y="2" width="3" height="14" rx="1" fill="white"/>
-                </svg>
-              </div>
-              <div>
-                <div className="pv-logo-name">PiggyTech Sentiment</div>
-                <div className="pv-logo-sub">Social Intelligence Dashboard</div>
+              <img
+                src={theme === 'dark' ? '/pv-logo-white.svg' : '/pv-logo-dark.svg'}
+                alt="PiggyVest"
+                height="22"
+                style={{ display: 'block' }}
+              />
+              <div className="pv-logo-sub" style={{ paddingLeft: '4px', borderLeft: '1px solid var(--border)', marginLeft: '4px' }}>
+                Sentiment
               </div>
             </div>
 
@@ -119,8 +125,8 @@ export default function Home() {
             </nav>
           </div>
 
-          {/* Controls */}
-          <div className="pv-nav-controls">
+          {/* Desktop controls */}
+          <div className="pv-nav-controls pv-hide-mobile">
             <select value={intent} onChange={e => setIntent(e.target.value)}
               className="pv-select" style={{ borderRadius: '10px', padding: '7px 12px', fontSize: '12px' }}>
               <option value="all">All Intents</option>
@@ -147,15 +153,118 @@ export default function Home() {
               {theme === 'dark' ? 'Light' : 'Dark'}
             </button>
           </div>
+
+          {/* Mobile hamburger */}
+          <button
+            className={`pv-hamburger${menuOpen ? ' is-open' : ''}`}
+            onClick={() => setMenuOpen(v => !v)}
+            aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={menuOpen}
+          >
+            <span className="pv-hamburger-bars">
+              <span /><span /><span />
+            </span>
+          </button>
         </div>
       </nav>
+
+      {/* ── Mobile menu drawer ─────────────────────────────────────── */}
+      {menuOpen && (
+        <>
+          <div
+            className="pv-mobile-menu-backdrop"
+            onClick={() => setMenuOpen(false)}
+            aria-hidden="true"
+          />
+          <aside className="pv-mobile-menu" role="dialog" aria-label="Menu">
+            <div className="pv-mobile-menu-head">
+              <div className="pv-mobile-menu-brand">
+                <img
+                  src={theme === 'dark' ? '/pv-logo-white.svg' : '/pv-logo-dark.svg'}
+                  alt="PiggyVest"
+                  height="20"
+                  style={{ display: 'block' }}
+                />
+                <span style={{ fontSize: '11px', color: 'var(--text-dim)', fontWeight: 700, letterSpacing: '0.04em' }}>
+                  Sentiment
+                </span>
+              </div>
+              <button
+                className="pv-mobile-menu-close"
+                onClick={() => setMenuOpen(false)}
+                aria-label="Close menu"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="pv-mobile-menu-section">
+              <div className="pv-mobile-menu-section-label">Navigate</div>
+              <span className="pv-mobile-menu-link active">
+                Dashboard
+                <span style={{ fontSize: '11px', color: 'var(--text-dim)', fontWeight: 500 }}>you’re here</span>
+              </span>
+              <Link
+                href="/tweets"
+                className="pv-mobile-menu-link"
+                onClick={() => setMenuOpen(false)}
+              >
+                Tweet Browser
+                <span style={{ fontSize: '14px' }}>→</span>
+              </Link>
+            </div>
+
+            <div className="pv-mobile-menu-section">
+              <div className="pv-mobile-menu-section-label">Filters</div>
+              <select
+                value={intent}
+                onChange={e => setIntent(e.target.value)}
+                className="pv-select"
+                style={{ borderRadius: '12px', width: '100%' }}
+              >
+                <option value="all">All Intents</option>
+                <option value="opinion">Opinion</option>
+                <option value="inquiry">Inquiry</option>
+                <option value="suggestion">Suggestion</option>
+                <option value="complaint">Complaint</option>
+                <option value="spam">Spam</option>
+              </select>
+              <select
+                value={product}
+                onChange={e => setProduct(e.target.value)}
+                className="pv-select"
+                style={{ borderRadius: '12px', width: '100%' }}
+              >
+                <option value="all">All Products</option>
+                <option value="PiggyVest">PiggyVest</option>
+                <option value="Pocket">Pocket</option>
+                <option value="PiggyVest_for_Business">PVB</option>
+              </select>
+            </div>
+
+            <div className="pv-mobile-menu-footer">
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                <span className="pv-badge pv-badge-live">Live</span>
+                <button
+                  className="pv-theme-btn"
+                  onClick={toggle}
+                  style={{ minHeight: '40px' }}
+                >
+                  <span style={{ fontSize: '14px', lineHeight: 1 }}>{theme === 'dark' ? '☀' : '☾'}</span>
+                  {theme === 'dark' ? 'Light mode' : 'Dark mode'}
+                </button>
+              </div>
+            </div>
+          </aside>
+        </>
+      )}
 
       {/* ── Hero ────────────────────────────────────────────────────── */}
       <div className="pv-hero">
         <div className="pv-wrap">
           <div className="pv-hero-inner">
 
-            <div>
+            <div style={{ minWidth: 0 }}>
               <div className="pv-hero-eyebrow">
                 <h1 className="pv-hero-title" style={{ marginBottom: 0 }}>Brand Sentiment Overview</h1>
                 <span className="pv-badge pv-badge-period">Q1 2026</span>
@@ -193,7 +302,7 @@ export default function Home() {
           <div className="pv-filters pv-section">
             <div className="pv-filter-row">
               <span className="pv-filter-label">Time Range</span>
-              <span className="pv-badge" style={{ background: 'var(--bg-elevated)', color: 'var(--text-dim)', fontSize: '9px' }}>
+              <span className="pv-badge pv-hide-mobile" style={{ background: 'var(--bg-elevated)', color: 'var(--text-dim)', fontSize: '9px' }}>
                 minute precision
               </span>
 
@@ -224,7 +333,7 @@ export default function Home() {
                 </button>
               )}
 
-              <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
                 <span style={{ fontSize: '12px', color: 'var(--text-dim)' }}>Showing</span>
                 <span style={{ fontSize: '14px', color: 'var(--text-primary)', fontWeight: '800', letterSpacing: '-0.02em' }}>
                   {filtered.length.toLocaleString()}
@@ -249,8 +358,8 @@ export default function Home() {
               borderColor: 'var(--accent-primary)',
               boxShadow: 'var(--accent-primary-glow)',
             }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
-                <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '18px' }}>
+                <div style={{ minWidth: 0, flex: 1 }}>
                   <div className="pv-card-label">Aspect Drill-Down</div>
                   <div style={{ fontSize: '15px', fontWeight: '800', color: 'var(--text-primary)', marginTop: '5px', letterSpacing: '-0.02em' }}>
                     {selectedAspect.replace(/_/g, ' ')}
@@ -270,23 +379,24 @@ export default function Home() {
                     className="pv-tweet-dot"
                     style={{ background: SENT_COLORS[tweet.overall_sentiment] || 'var(--text-dim)' }}
                   />
-                  <div style={{ flex: 1 }}>
+                  <div className="pv-tweet-col">
                     <div className="pv-tweet-text">{tweet.tweet_text}</div>
                     {tweet.author_username && (
                       <span className="pv-tweet-author">@{tweet.author_username}</span>
                     )}
                   </div>
-                  <span className="pv-badge" style={{
-                    background: tweet.overall_sentiment?.includes('positive')
-                      ? 'var(--badge-vpos-bg)'
-                      : tweet.overall_sentiment?.includes('negative')
-                      ? 'var(--badge-vneg-bg)'
-                      : 'var(--badge-neu-bg)',
-                    color: SENT_COLORS[tweet.overall_sentiment] || 'var(--text-dim)',
-                    flexShrink: 0,
-                  }}>
-                    {tweet.overall_sentiment?.replace(/_/g, ' ')}
-                  </span>
+                  <div className="pv-tweet-badges">
+                    <span className="pv-badge" style={{
+                      background: tweet.overall_sentiment?.includes('positive')
+                        ? 'var(--badge-vpos-bg)'
+                        : tweet.overall_sentiment?.includes('negative')
+                        ? 'var(--badge-vneg-bg)'
+                        : 'var(--badge-neu-bg)',
+                      color: SENT_COLORS[tweet.overall_sentiment] || 'var(--text-dim)',
+                    }}>
+                      {tweet.overall_sentiment?.replace(/_/g, ' ')}
+                    </span>
+                  </div>
                 </div>
               ))}
             </div>
@@ -302,19 +412,16 @@ export default function Home() {
 
           {/* ── Footer ────────────────────────────────────────────── */}
           <div className="pv-footer">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div className="pv-logo-mark" style={{ width: '26px', height: '26px', borderRadius: '7px' }}>
-                <svg width="13" height="13" viewBox="0 0 18 18" fill="none">
-                  <rect x="2" y="9" width="3" height="7" rx="1" fill="white"/>
-                  <rect x="7" y="5" width="3" height="11" rx="1" fill="white"/>
-                  <rect x="12" y="2" width="3" height="14" rx="1" fill="white"/>
-                </svg>
-              </div>
-              <span style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-muted)' }}>
-                PiggyTech Sentiment
-              </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <img
+                src={theme === 'dark' ? '/pv-logo-white.svg' : '/pv-logo-dark.svg'}
+                alt="PiggyVest"
+                height="18"
+                style={{ display: 'block', opacity: 0.7 }}
+              />
+              <span style={{ fontSize: '12px', color: 'var(--text-dim)', fontWeight: '600' }}>Sentiment</span>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexWrap: 'wrap' }}>
               <span style={{ fontSize: '12px', color: 'var(--text-dim)' }}>
                 Powered by Gemini 2.0 Flash · Scraped via Apify
               </span>

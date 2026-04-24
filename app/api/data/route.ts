@@ -1,28 +1,17 @@
 import { NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import fs from 'fs';
+import path from 'path';
+import { parse } from 'csv-parse/sync';
 
 export async function GET() {
   try {
-    const sql = getDb();
-
-    const rows = await sql`
-      SELECT
-        tweet_id,
-        tweet_text,
-        author_username,
-        author_name,
-        products_detected,
-        overall_sentiment,
-        intent,
-        aspect_product,
-        aspect,
-        aspect_sentiment,
-        created_at
-      FROM tweets
-      ORDER BY scraped_at DESC
-    `;
-
-    return NextResponse.json({ data: rows });
+    const filePath = path.join(process.cwd(), 'public', 'labelled_tweets_gemini.csv');
+    const fileContent = fs.readFileSync(filePath, 'utf-8');
+    const records = parse(fileContent, {
+      columns: true,
+      skip_empty_lines: true,
+    });
+    return NextResponse.json({ data: records });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

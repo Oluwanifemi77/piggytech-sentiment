@@ -39,3 +39,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# ml workspace (python virtualenv, scraped data, trained models, checkpoints)
+/ml/.venv/
+/ml/data/
+/ml/models/
+/ml/checkpoints/
+/ml/__pycache__/
+/ml/**/__pycache__/
+/ml/.ipynb_checkpoints/

@@ -71,14 +71,14 @@ export default function TweetTable({ data }: { data: any[] }) {
   return (
     <div className="pv-card">
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
-        <div>
+      <div className="pv-table-head">
+        <div style={{ minWidth: 0 }}>
           <div className="pv-card-label">Recent Tweets</div>
           <div style={{ fontSize: '12px', color: 'var(--text-dim)', marginTop: '3px', fontWeight: '500' }}>
             {filtered.length.toLocaleString()} results
           </div>
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div className="pv-table-head-actions">
           <select
             value={intentFilter}
             onChange={e => { setIntentFilter(e.target.value); setPage(0); }}
@@ -121,7 +121,7 @@ export default function TweetTable({ data }: { data: any[] }) {
                 className="pv-tweet-dot"
                 style={{ background: DOT_COLOR[row.overall_sentiment] || 'var(--text-dim)' }}
               />
-              <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="pv-tweet-col">
                 <div className="pv-tweet-text">{row.tweet_text}</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                   {row.author_username && (
