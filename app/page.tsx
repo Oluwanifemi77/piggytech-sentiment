@@ -7,6 +7,7 @@ import TweetTable from '@/components/TweetTable';
 import { useTheme } from '@/components/ThemeProvider';
 import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
+import { isPiggyTech } from '@/lib/products';
 
 // Sentiment dot colours — kept as CSS vars so they respect light/dark theme
 const SENT_COLORS: Record<string, string> = {
@@ -55,19 +56,22 @@ export default function Home() {
     return () => { document.body.style.overflow = ''; };
   }, [menuOpen]);
 
-  // Date bounds for datetime-local min/max
+  // Filter base data to PiggyTech only
+  const pvData = useMemo(() => data.filter(d => isPiggyTech(d.aspect_product)), [data]);
+
+  // Date bounds for datetime-local min/max (from pvData)
   const dateBounds = useMemo(() => {
-    const dates = data.map(d => d.created_at).filter(Boolean).sort();
+    const dates = pvData.map(d => d.created_at).filter(Boolean).sort();
     return {
       min: toDatetimeLocal(dates[0] || ''),
       max: toDatetimeLocal(dates[dates.length - 1] || ''),
     };
-  }, [data]);
+  }, [pvData]);
 
   const filtered = useMemo(() => {
     const normStart = fromDatetimeLocal(startDate);
     const normEnd   = endDate ? fromDatetimeLocal(endDate) + ':59' : '';
-    return data.filter(d => {
+    return pvData.filter(d => {
       if (product !== 'all' && !d.products_detected?.includes(product)) return false;
       if (intent !== 'all' && d.intent !== intent) return false;
       if (selectedAspect && d.aspect !== selectedAspect) return false;
@@ -75,12 +79,12 @@ export default function Home() {
       if (normEnd   && d.created_at > normEnd)   return false;
       return true;
     });
-  }, [data, product, intent, selectedAspect, startDate, endDate]);
+  }, [pvData, product, intent, selectedAspect, startDate, endDate]);
 
   const aspectTweets = useMemo(() => {
     if (!selectedAspect) return [];
-    return data.filter(d => d.aspect === selectedAspect).slice(0, 10);
-  }, [data, selectedAspect]);
+    return pvData.filter(d => d.aspect === selectedAspect).slice(0, 10);
+  }, [pvData, selectedAspect]);
 
   const heroStats = useMemo(() => {
     const pos  = filtered.filter(d => d.overall_sentiment?.includes('positive')).length;
@@ -100,6 +104,9 @@ export default function Home() {
 
   return (
     <div style={{ background: 'var(--bg-page)', minHeight: '100vh', paddingTop: '3px' }}>
+
+      {/* ── Accent bar ─────────────────────────────────────────────── */}
+      <div className="pv-accent-bar" />
 
       {/* ── Navbar ──────────────────────────────────────────────────── */}
       <nav className="pv-nav">
@@ -121,7 +128,9 @@ export default function Home() {
 
             <nav className="pv-nav-links">
               <span className="pv-nav-link active">Dashboard</span>
-              <Link href="/tweets" className="pv-nav-link">Tweet Browser</Link>
+              <Link href="/external" className="pv-nav-link">External</Link>
+              <Link href="/compare" className="pv-nav-link">Compare</Link>
+              <Link href="/tweets" className="pv-nav-link">Tweets</Link>
             </nav>
           </div>
 
@@ -142,7 +151,7 @@ export default function Home() {
               <option value="all">All Products</option>
               <option value="PiggyVest">PiggyVest</option>
               <option value="Pocket">Pocket</option>
-              <option value="PiggyVest_for_Business">PVB</option>
+              <option value="PiggyVest_for_Business">PiggyVest for Business</option>
             </select>
 
             <span className="pv-badge pv-badge-live">Live</span>
@@ -202,8 +211,24 @@ export default function Home() {
               <div className="pv-mobile-menu-section-label">Navigate</div>
               <span className="pv-mobile-menu-link active">
                 Dashboard
-                <span style={{ fontSize: '11px', color: 'var(--text-dim)', fontWeight: 500 }}>you’re here</span>
+                <span style={{ fontSize: '11px', color: 'var(--text-dim)', fontWeight: 500 }}>you're here</span>
               </span>
+              <Link
+                href="/external"
+                className="pv-mobile-menu-link"
+                onClick={() => setMenuOpen(false)}
+              >
+                External
+                <span style={{ fontSize: '14px' }}>→</span>
+              </Link>
+              <Link
+                href="/compare"
+                className="pv-mobile-menu-link"
+                onClick={() => setMenuOpen(false)}
+              >
+                Compare
+                <span style={{ fontSize: '14px' }}>→</span>
+              </Link>
               <Link
                 href="/tweets"
                 className="pv-mobile-menu-link"
@@ -238,7 +263,7 @@ export default function Home() {
                 <option value="all">All Products</option>
                 <option value="PiggyVest">PiggyVest</option>
                 <option value="Pocket">Pocket</option>
-                <option value="PiggyVest_for_Business">PVB</option>
+                <option value="PiggyVest_for_Business">PiggyVest for Business</option>
               </select>
             </div>
 
@@ -267,20 +292,21 @@ export default function Home() {
             <div style={{ minWidth: 0 }}>
               <div className="pv-hero-eyebrow">
                 <h1 className="pv-hero-title" style={{ marginBottom: 0 }}>Brand Sentiment Overview</h1>
-                <span className="pv-badge pv-badge-period">Q1 2026</span>
+                <span className="pv-badge pv-badge-period">PiggyTech</span>
+                <span className="pv-badge" style={{ background: 'var(--accent-primary-bg)', color: 'var(--accent-primary)', border: '1.5px solid transparent', fontSize: '10px' }}>Q1 2026</span>
               </div>
               <p className="pv-hero-sub">
-                Real-time social intelligence across PiggyVest, Pocket, and PiggyVest for Business.
-                Scraped from X every 30 minutes and labelled with AI.
+                Real-time social intelligence across PiggyTech products only — PiggyVest, Pocket,
+                and PiggyVest for Business. Scraped from X and labelled with AI.
               </p>
             </div>
 
             {/* Quick stats */}
             <div className="pv-hero-stats">
               {[
-                { label: 'Total Records',  val: data.length.toLocaleString(),     color: 'var(--accent-primary)' },
-                { label: 'Showing',        val: filtered.length.toLocaleString(), color: 'var(--accent-blue)' },
-                { label: 'Positivity',     val: `${heroStats.posRate}%`,
+                { label: 'PiggyTech Records', val: pvData.length.toLocaleString(),     color: 'var(--accent-primary)' },
+                { label: 'Showing',           val: filtered.length.toLocaleString(), color: 'var(--accent-blue)' },
+                { label: 'Positivity',        val: `${heroStats.posRate}%`,
                   color: heroStats.posRate >= 50 ? 'var(--accent-green)' : 'var(--accent-red)' },
               ].map(stat => (
                 <div key={stat.label} className="pv-hero-stat">
@@ -403,7 +429,7 @@ export default function Home() {
           )}
 
           {/* ── Product sentiment ─────────────────────────────────── */}
-          <ProductBar data={filtered} />
+          <ProductBar data={filtered} showSubProducts={true} />
 
           {/* ── Tweet stream ──────────────────────────────────────── */}
           <div className="pv-section">
@@ -425,6 +451,18 @@ export default function Home() {
               <span style={{ fontSize: '12px', color: 'var(--text-dim)' }}>
                 Powered by Gemini 2.0 Flash · Scraped via Apify
               </span>
+              <Link href="/external" style={{
+                fontSize: '12px', color: 'var(--accent-orange)',
+                fontWeight: '700', textDecoration: 'none',
+              }}>
+                External products →
+              </Link>
+              <Link href="/compare" style={{
+                fontSize: '12px', color: 'var(--accent-purple)',
+                fontWeight: '700', textDecoration: 'none',
+              }}>
+                Compare →
+              </Link>
               <Link href="/tweets" style={{
                 fontSize: '12px', color: 'var(--accent-primary)',
                 fontWeight: '700', textDecoration: 'none',
