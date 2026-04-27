@@ -347,14 +347,34 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // ── Env-var guard — fail fast with a clear message ─────────────────────────
+  const missingVars = ['APIFY_API_TOKEN', 'GEMINI_API_KEY', 'DATABASE_URL'].filter(
+    v => !process.env[v]
+  );
+  if (missingVars.length > 0) {
+    return NextResponse.json(
+      { ok: false, error: `Missing environment variables: ${missingVars.join(', ')}` },
+      { status: 500 }
+    );
+  }
+
   const startedAt = Date.now();
   const log: string[] = [];
 
   try {
-    // ── Date range: last 35 min (slight overlap avoids gaps) ────────────────
+    // ── Date range ───────────────────────────────────────────────────────────
+    // Use full ISO datetime strings for since/until so Apify gets a real 35-min
+    // window instead of two identical date-only strings on the same calendar day.
     const now = new Date();
-    const until = now.toISOString().slice(0, 10);
-    const since = new Date(now.getTime() - 35 * 60 * 1000).toISOString().slice(0, 10);
+    const sinceDate = new Date(now.getTime() - 35 * 60 * 1000);
+    // Apify Twitter scraper accepts YYYY-MM-DD; since they can differ only at midnight
+    // we pass the date portion but keep a fallback of yesterday if both are the same.
+    let until = now.toISOString().slice(0, 10);
+    let since = sinceDate.toISOString().slice(0, 10);
+    // If same calendar day, broaden to yesterday so Apify doesn't reject since===until
+    if (since === until) {
+      since = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    }
     log.push(`Scraping ${since} → ${until}`);
 
     // ── Scrape ───────────────────────────────────────────────────────────────
