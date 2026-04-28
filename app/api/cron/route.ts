@@ -13,11 +13,11 @@
  *   APIFY_API_TOKEN   — Apify account token
  *   GEMINI_API_KEY    — Google AI Studio API key
  *   CRON_SECRET       — A random string you choose
- *   DATABASE_URL      — Neon Postgres connection string
+ *   GOOGLE_SERVICE_ACCOUNT_KEY — Stringified JSON of your Google service account key
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@/lib/db';
+import { getBigQuery, BQ_DATASET, BQ_TABLE } from '@/lib/bigquery';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -143,10 +143,13 @@ async function scrapeTweets(since: string, until: string): Promise<RawTweet[]> {
 
 async function getExistingIds(tweetIds: string[]): Promise<Set<string>> {
   if (tweetIds.length === 0) return new Set();
-  const sql = getDb();
-  const rows = await sql`
-    SELECT DISTINCT tweet_id FROM tweets WHERE tweet_id = ANY(${tweetIds})
-  `;
+  const bq = getBigQuery();
+  const [rows] = await bq.query({
+    query: `SELECT DISTINCT tweet_id
+            FROM \`${BQ_DATASET}.${BQ_TABLE}\`
+            WHERE tweet_id IN UNNEST(@ids)`,
+    params: { ids: tweetIds },
+  });
   return new Set(rows.map((r: any) => r.tweet_id as string));
 }
 
@@ -308,27 +311,27 @@ async function labelTweet(tweet: RawTweet): Promise<Record<string, string>[]> {
 
 async function insertRows(rows: Record<string, string>[]): Promise<number> {
   if (rows.length === 0) return 0;
-  const sql = getDb();
-  let saved = 0;
+  const bq = getBigQuery();
+  const table = bq.dataset(BQ_DATASET).table(BQ_TABLE);
+  const now = new Date().toISOString();
 
-  for (const row of rows) {
-    const result = await sql`
-      INSERT INTO tweets
-        (tweet_id, tweet_text, author_username, author_name,
-         products_detected, overall_sentiment, intent,
-         aspect_product, aspect, aspect_sentiment, created_at)
-      VALUES
-        (${row.tweet_id}, ${row.tweet_text}, ${row.author_username},
-         ${row.author_name}, ${row.products_detected}, ${row.overall_sentiment},
-         ${row.intent}, ${row.aspect_product}, ${row.aspect},
-         ${row.aspect_sentiment}, ${row.created_at})
-      ON CONFLICT (tweet_id, aspect) DO NOTHING
-      RETURNING id
-    `;
-    if (result.length > 0) saved++;
-  }
+  const bqRows = rows.map(row => ({
+    tweet_id:          row.tweet_id,
+    tweet_text:        row.tweet_text,
+    author_username:   row.author_username,
+    author_name:       row.author_name,
+    products_detected: row.products_detected,
+    overall_sentiment: row.overall_sentiment,
+    intent:            row.intent,
+    aspect_product:    row.aspect_product,
+    aspect:            row.aspect,
+    aspect_sentiment:  row.aspect_sentiment,
+    created_at:        row.created_at || now,
+    inserted_at:       now,
+  }));
 
-  return saved;
+  await table.insert(bqRows, { skipInvalidRows: true, ignoreUnknownValues: true });
+  return bqRows.length;
 }
 
 // ─── Main Handler ─────────────────────────────────────────────────────────────
@@ -348,7 +351,7 @@ export async function GET(req: NextRequest) {
   }
 
   // ── Env-var guard — fail fast with a clear message ─────────────────────────
-  const missingVars = ['APIFY_API_TOKEN', 'GEMINI_API_KEY', 'DATABASE_URL'].filter(
+  const missingVars = ['APIFY_API_TOKEN', 'GEMINI_API_KEY', 'GOOGLE_SERVICE_ACCOUNT_KEY'].filter(
     v => !process.env[v]
   );
   if (missingVars.length > 0) {

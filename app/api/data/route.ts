@@ -1,17 +1,15 @@
 import { NextResponse } from 'next/server';
-import fs from 'fs';
-import path from 'path';
-import { parse } from 'csv-parse/sync';
+import { getBigQuery, BQ_DATASET, BQ_TABLE } from '@/lib/bigquery';
 
 export async function GET() {
   try {
-    const filePath = path.join(process.cwd(), 'public', 'labelled_tweets_gemini.csv');
-    const fileContent = fs.readFileSync(filePath, 'utf-8');
-    const records = parse(fileContent, {
-      columns: true,
-      skip_empty_lines: true,
+    const bq = getBigQuery();
+    const [rows] = await bq.query({
+      query: `SELECT * FROM \`${BQ_DATASET}.${BQ_TABLE}\`
+              ORDER BY created_at DESC
+              LIMIT 5000`,
     });
-    return NextResponse.json({ data: records });
+    return NextResponse.json({ data: rows });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
