@@ -1,0 +1,28 @@
+# PiggyTech Sentiment Analysis — local Python deps
+# Pinned to versions that play well on Apple Silicon (MPS) as of April 2026.
+# Install into a venv:  python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
+
+# core data
+pandas>=2.2,<3
+numpy>=1.26,<3
+scikit-learn>=1.4,<2
+
+# secrets
+python-dotenv>=1.0,<2
+
+# scraping
+apify-client>=1.8,<2
+
+# labelling
+google-generativeai>=0.7,<0.9
+
+# modelling — torch first so MPS builds aren't overridden by transformers pulls
+torch>=2.2,<3
+transformers>=4.40,<5
+datasets>=2.18,<3
+accelerate>=0.28,<2
+sentencepiece>=0.2,<0.3
+
+# notebook runtime (VS Code Jupyter uses ipykernel to run cells)
+ipykernel>=6.29,<7
+jupyter>=1.0,<2

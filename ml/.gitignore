@@ -1,0 +1,15 @@
+# Python venv
+.venv/
+__pycache__/
+*.pyc
+
+# secrets
+.env
+
+# data and models (large, regeneratable)
+data/
+models/
+checkpoints/
+
+# jupyter scratch
+.ipynb_checkpoints/
