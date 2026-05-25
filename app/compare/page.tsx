@@ -4,6 +4,10 @@ import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 import { isPiggyTech, getDisplayName, PIGGTECH_SET, avgScore } from '@/lib/products';
 import { SENT_HEX } from '@/components/ProductBar';
+import {
+  LineChart, Line, XAxis, YAxis, Tooltip,
+  ResponsiveContainer, CartesianGrid, Legend,
+} from 'recharts';
 
 const EXT_COLORS = ['#F0903A', '#9F7AEA', '#4DB89E', '#E88C1A', '#3D8EF0', '#FC5959', '#48BB78'];
 
@@ -173,6 +177,360 @@ function CompareCard({ productKey, data, color, isPiggyTechProduct }: CompareCar
           </ul>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WINNER / LEADER CALLOUT
+// ─────────────────────────────────────────────────────────────────────────────
+interface SelectedProduct { productKey: string; data: any[]; color: string; isPiggyTechProduct: boolean; }
+
+function WinnerCallout({ selectedData }: { selectedData: SelectedProduct[] }) {
+  const ranked = useMemo(() => {
+    return [...selectedData]
+      .map(({ productKey, data, color }) => {
+        const total   = data.length || 1;
+        const pos     = data.filter(x => x.overall_sentiment?.includes('positive')).length;
+        const posRate = Math.round((pos / total) * 100);
+        const score   = avgScore(data);
+        return { productKey, color, total: data.length, posRate, score };
+      })
+      .sort((a, b) => b.posRate - a.posRate);
+  }, [selectedData]);
+
+  const MEDALS = ['🥇', '🥈', '🥉', '4️⃣'];
+  const RANK_LABELS = ['#1 Leader', '#2 Runner-up', '#3 Third', '#4 Fourth'];
+
+  return (
+    <div className="pv-card pv-section">
+      <div style={{ marginBottom: '20px' }}>
+        <div className="pv-card-label">Leaderboard</div>
+        <div style={{ fontSize: '12px', color: 'var(--text-dim)', marginTop: '3px', fontWeight: '500' }}>
+          Products ranked by positivity rate across all mentions
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+        {ranked.map((p, i) => (
+          <div key={p.productKey} style={{
+            flex: '1 1 180px',
+            minWidth: '160px',
+            background: i === 0 ? `${p.color}12` : 'var(--bg-elevated)',
+            border: `1.5px solid ${i === 0 ? p.color : 'var(--border)'}`,
+            borderRadius: '14px',
+            padding: '16px 18px',
+            position: 'relative',
+            overflow: 'hidden',
+          }}>
+            {/* rank glow stripe */}
+            <div style={{
+              position: 'absolute', top: 0, left: 0, right: 0,
+              height: '3px', background: p.color, opacity: i === 0 ? 1 : 0.4,
+            }} />
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+              <span style={{ fontSize: '20px', lineHeight: 1 }}>{MEDALS[i] ?? '·'}</span>
+              <div>
+                <div style={{ fontSize: '10px', fontWeight: '700', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+                  {RANK_LABELS[i]}
+                </div>
+                <div style={{ fontSize: '13px', fontWeight: '800', color: 'var(--text-primary)', letterSpacing: '-0.02em', lineHeight: 1.2 }}>
+                  {getDisplayName(p.productKey)}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+              <div>
+                <div style={{ fontSize: '22px', fontWeight: '800', letterSpacing: '-0.04em', color: p.posRate >= 50 ? 'var(--accent-green)' : 'var(--accent-red)', lineHeight: 1 }}>
+                  {p.posRate}%
+                </div>
+                <div style={{ fontSize: '10px', color: 'var(--text-dim)', fontWeight: '600' }}>positive</div>
+              </div>
+              <div>
+                <div style={{ fontSize: '22px', fontWeight: '800', letterSpacing: '-0.04em', color: p.score >= 3.5 ? 'var(--accent-green)' : p.score <= 2.5 ? 'var(--accent-red)' : 'var(--accent-blue)', lineHeight: 1 }}>
+                  {p.score > 0 ? p.score : '—'}
+                </div>
+                <div style={{ fontSize: '10px', color: 'var(--text-dim)', fontWeight: '600' }}>avg score</div>
+              </div>
+              <div>
+                <div style={{ fontSize: '22px', fontWeight: '800', letterSpacing: '-0.04em', color: 'var(--text-secondary)', lineHeight: 1 }}>
+                  {p.total.toLocaleString()}
+                </div>
+                <div style={{ fontSize: '10px', color: 'var(--text-dim)', fontWeight: '600' }}>mentions</div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ASPECT BREAKDOWN TABLE
+// ─────────────────────────────────────────────────────────────────────────────
+function AspectBreakdown({ selectedData }: { selectedData: SelectedProduct[] }) {
+  // Gather all aspects across all selected products, sorted by total mentions
+  const allAspects = useMemo(() => {
+    const counts: Record<string, number> = {};
+    selectedData.forEach(({ data }) => {
+      data.forEach(d => { if (d.aspect) counts[d.aspect] = (counts[d.aspect] || 0) + 1; });
+    });
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 12)
+      .map(([a]) => a);
+  }, [selectedData]);
+
+  // For each product + aspect → positivity %
+  const getCellRate = (data: any[], aspect: string) => {
+    const subset = data.filter(d => d.aspect === aspect);
+    if (!subset.length) return null;
+    const pos = subset.filter(d => d.overall_sentiment?.includes('positive')).length;
+    return { rate: Math.round((pos / subset.length) * 100), count: subset.length };
+  };
+
+  const cellBg = (rate: number) => {
+    if (rate >= 70) return 'rgba(16,178,89,0.15)';
+    if (rate >= 50) return 'rgba(16,178,89,0.07)';
+    if (rate <= 30) return 'rgba(229,62,62,0.15)';
+    if (rate < 50)  return 'rgba(229,62,62,0.07)';
+    return 'var(--bg-elevated)';
+  };
+  const cellColor = (rate: number) => {
+    if (rate >= 50) return 'var(--accent-green)';
+    return 'var(--accent-red)';
+  };
+
+  if (!allAspects.length) return null;
+
+  return (
+    <div className="pv-card pv-section">
+      <div style={{ marginBottom: '20px' }}>
+        <div className="pv-card-label">Aspect Breakdown</div>
+        <div style={{ fontSize: '12px', color: 'var(--text-dim)', marginTop: '3px', fontWeight: '500' }}>
+          Positivity rate per product per aspect — green = users happy, red = users unhappy
+        </div>
+      </div>
+
+      <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+        <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: '0 4px', minWidth: '400px' }}>
+          <thead>
+            <tr>
+              <th style={{
+                textAlign: 'left', fontSize: '10px', fontWeight: '700',
+                color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.07em',
+                padding: '6px 12px 10px 4px', width: '35%',
+              }}>
+                Aspect
+              </th>
+              {selectedData.map(({ productKey, color }) => (
+                <th key={productKey} style={{
+                  textAlign: 'center', fontSize: '11px', fontWeight: '800',
+                  color: 'var(--text-primary)', padding: '6px 8px 10px',
+                  letterSpacing: '-0.01em',
+                }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: color }} />
+                    {getDisplayName(productKey)}
+                  </div>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {allAspects.map(aspect => (
+              <tr key={aspect}>
+                <td style={{
+                  fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)',
+                  padding: '8px 12px 8px 4px', whiteSpace: 'nowrap',
+                }}>
+                  {aspect.replace(/_/g, ' ')}
+                </td>
+                {selectedData.map(({ productKey, data }) => {
+                  const cell = getCellRate(data, aspect);
+                  return (
+                    <td key={productKey} style={{ padding: '4px 6px', textAlign: 'center' }}>
+                      {cell ? (
+                        <div style={{
+                          background: cellBg(cell.rate),
+                          borderRadius: '8px',
+                          padding: '7px 10px',
+                          display: 'inline-flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          minWidth: '60px',
+                        }}>
+                          <span style={{ fontSize: '14px', fontWeight: '800', color: cellColor(cell.rate), letterSpacing: '-0.02em', lineHeight: 1 }}>
+                            {cell.rate}%
+                          </span>
+                          <span style={{ fontSize: '9px', color: 'var(--text-dim)', fontWeight: '600', marginTop: '2px' }}>
+                            {cell.count} tweet{cell.count !== 1 ? 's' : ''}
+                          </span>
+                        </div>
+                      ) : (
+                        <span style={{ fontSize: '12px', color: 'var(--text-ghost)', fontWeight: '500' }}>—</span>
+                      )}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Legend */}
+      <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--border)' }}>
+        {[
+          { label: '≥70% pos', bg: 'rgba(16,178,89,0.15)', color: 'var(--accent-green)' },
+          { label: '50–69% pos', bg: 'rgba(16,178,89,0.07)', color: 'var(--accent-green)' },
+          { label: '<50% pos', bg: 'rgba(229,62,62,0.07)', color: 'var(--accent-red)' },
+          { label: '≤30% pos', bg: 'rgba(229,62,62,0.15)', color: 'var(--accent-red)' },
+        ].map(l => (
+          <div key={l.label} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <div style={{ width: '12px', height: '12px', borderRadius: '3px', background: l.bg, border: `1px solid ${l.color}30` }} />
+            <span style={{ fontSize: '10px', color: 'var(--text-dim)', fontWeight: '600' }}>{l.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TREND OVER TIME
+// ─────────────────────────────────────────────────────────────────────────────
+function TrendChart({ selectedData }: { selectedData: SelectedProduct[] }) {
+  // Build month-bucketed positivity % per product
+  const chartData = useMemo(() => {
+    const monthSet = new Set<string>();
+    const productMonthPos: Record<string, Record<string, number>>   = {};
+    const productMonthTotal: Record<string, Record<string, number>> = {};
+
+    selectedData.forEach(({ productKey, data }) => {
+      productMonthPos[productKey]   = {};
+      productMonthTotal[productKey] = {};
+      data.forEach(d => {
+        if (!d.created_at) return;
+        const month = String(d.created_at).slice(0, 7); // "YYYY-MM"
+        monthSet.add(month);
+        productMonthTotal[productKey][month] = (productMonthTotal[productKey][month] || 0) + 1;
+        if (d.overall_sentiment?.includes('positive')) {
+          productMonthPos[productKey][month] = (productMonthPos[productKey][month] || 0) + 1;
+        }
+      });
+    });
+
+    const months = Array.from(monthSet).sort();
+    return months.map(month => {
+      const point: Record<string, any> = { month };
+      selectedData.forEach(({ productKey }) => {
+        const total = productMonthTotal[productKey][month] || 0;
+        const pos   = productMonthPos[productKey][month]   || 0;
+        point[productKey] = total >= 3 ? Math.round((pos / total) * 100) : null;
+      });
+      return point;
+    });
+  }, [selectedData]);
+
+  // Need at least 2 months of data to show a trend
+  const validMonths = chartData.filter(d =>
+    selectedData.some(p => d[p.productKey] !== null)
+  );
+
+  if (validMonths.length < 2) return null;
+
+  const formatMonth = (m: string) => {
+    const [y, mo] = m.split('-');
+    const names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return `${names[parseInt(mo, 10) - 1]} ${y.slice(2)}`;
+  };
+
+  interface TooltipProps {
+    active?: boolean;
+    payload?: Array<{ name: string; value: number | null; color: string }>;
+    label?: string;
+  }
+
+  const CustomTooltip = ({ active, payload, label }: TooltipProps) => {
+    if (!active || !payload?.length) return null;
+    return (
+      <div style={{
+        background: 'var(--bg-card)', border: '1px solid var(--border)',
+        borderRadius: '10px', padding: '10px 14px',
+        boxShadow: 'var(--shadow-md)', fontSize: '12px',
+      }}>
+        <div style={{ fontWeight: '700', color: 'var(--text-primary)', marginBottom: '6px' }}>
+          {label ? formatMonth(label) : ''}
+        </div>
+        {payload.filter(p => p.value !== null).map(p => (
+          <div key={p.name} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '3px' }}>
+            <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: p.color }} />
+            <span style={{ color: 'var(--text-muted)' }}>{getDisplayName(p.name)}</span>
+            <span style={{ fontWeight: '700', color: p.color, marginLeft: 'auto', paddingLeft: '12px' }}>
+              {p.value}%
+            </span>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  return (
+    <div className="pv-card pv-section">
+      <div style={{ marginBottom: '20px' }}>
+        <div className="pv-card-label">Positivity Trend Over Time</div>
+        <div style={{ fontSize: '12px', color: 'var(--text-dim)', marginTop: '3px', fontWeight: '500' }}>
+          Monthly positivity % — see who's gaining or losing public sentiment
+        </div>
+      </div>
+
+      <ResponsiveContainer width="100%" height={260}>
+        <LineChart data={chartData} margin={{ top: 8, right: 16, left: -10, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+          <XAxis
+            dataKey="month"
+            tickFormatter={formatMonth}
+            tick={{ fontSize: 11, fill: 'var(--text-dim)', fontWeight: 600 }}
+            axisLine={false}
+            tickLine={false}
+          />
+          <YAxis
+            domain={[0, 100]}
+            tickFormatter={v => `${v}%`}
+            tick={{ fontSize: 11, fill: 'var(--text-dim)', fontWeight: 600 }}
+            axisLine={false}
+            tickLine={false}
+            width={38}
+          />
+          <Tooltip content={<CustomTooltip />} />
+          <Legend
+            formatter={(value) => (
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '600' }}>
+                {getDisplayName(value)}
+              </span>
+            )}
+            iconSize={8}
+            iconType="circle"
+            wrapperStyle={{ paddingTop: '12px' }}
+          />
+          {selectedData.map(({ productKey, color }) => (
+            <Line
+              key={productKey}
+              type="monotone"
+              dataKey={productKey}
+              stroke={color}
+              strokeWidth={2.5}
+              dot={{ r: 4, fill: color, strokeWidth: 0 }}
+              activeDot={{ r: 6, fill: color, strokeWidth: 2, stroke: 'var(--bg-card)' }}
+              connectNulls={false}
+            />
+          ))}
+        </LineChart>
+      </ResponsiveContainer>
     </div>
   );
 }
@@ -511,6 +869,11 @@ export default function ComparePage() {
             )}
           </div>
 
+          {/* ── Winner / Leaderboard ─────────────────────────────── */}
+          {selected.length >= 2 && (
+            <WinnerCallout selectedData={selectedData} />
+          )}
+
           {/* ── Comparison cards grid ─────────────────────────────── */}
           {selected.length === 0 ? (
             <div className="pv-card pv-section" style={{ textAlign: 'center', padding: '56px 24px' }}>
@@ -534,6 +897,16 @@ export default function ComparePage() {
                 />
               ))}
             </div>
+          )}
+
+          {/* ── Aspect Breakdown table ───────────────────────────── */}
+          {selected.length >= 2 && (
+            <AspectBreakdown selectedData={selectedData} />
+          )}
+
+          {/* ── Trend Over Time ───────────────────────────────────── */}
+          {selected.length >= 2 && (
+            <TrendChart selectedData={selectedData} />
           )}
 
           {/* ── Combined bar chart ────────────────────────────────── */}
