@@ -3,10 +3,16 @@
  *
  * Automated pipeline — scrape X → clean → label with Gemini → save to Neon DB
  *
- * Trigger this endpoint every 30 minutes via cron-job.org or any scheduler.
+ * Triggered hourly by GitHub Actions (.github/workflows/hourly-cron.yml).
+ *
+ * Targets:
+ *   GET /api/cron?target=piggytech  → PiggyVest / Pocket / PVB (default)
+ *   GET /api/cron?target=external   → competitors (Cowrywise, OPay, Moniepoint,
+ *                                     PalmPay, FairMoney, Bamboo) for /compare & /external
  *
  * Security: Set CRON_SECRET in your env. Pass it as:
  *   Header:  x-cron-secret: <your-secret>
+ *   OR Header: Authorization: Bearer <your-secret>
  *   OR Query: ?secret=<your-secret>
  *
  * Required env vars:
@@ -34,6 +40,28 @@ const SEARCH_QUERIES = [
   'pocket app Nigeria', '@usepocket', 'pocket wallet',
   'PVB piggyvest', 'piggyvest for business', 'investify piggyvest',
   'flex dollar piggyvest', 'piggypoints',
+];
+
+// ─── External competitors (comparison sections) ─────────────────────────────
+
+const EXTERNAL_PRODUCTS = ['Cowrywise', 'OPay', 'Moniepoint', 'PalmPay', 'FairMoney', 'Bamboo'];
+
+const EXTERNAL_KEYWORDS = [
+  'cowrywise', '@cowrywise',
+  'opay', '@opay_ng', 'opay nigeria',
+  'moniepoint', '@moniepoint',
+  'palmpay', '@palmpay_ng',
+  'fairmoney', '@fairmoney_ng',
+  'investbamboo', 'bamboo invest', '@investbamboo',
+];
+
+const EXTERNAL_QUERIES = [
+  'cowrywise', 'cowrywise savings', '@cowrywise',
+  'opay Nigeria', 'opay transfer', 'opay customer service',
+  'moniepoint', 'moniepoint transfer', '@moniepoint',
+  'palmpay', 'palmpay Nigeria',
+  'fairmoney', 'fairmoney loan',
+  'investbamboo', 'bamboo invest app',
 ];
 
 const SENTIMENT_LABELS = [
@@ -68,7 +96,12 @@ interface RawTweet {
   author_name: string;
 }
 
-async function scrapeTweets(since: string, until: string): Promise<RawTweet[]> {
+async function scrapeTweets(
+  since: string,
+  until: string,
+  queries: string[],
+  keywords: string[],
+): Promise<RawTweet[]> {
   const token = process.env.APIFY_API_TOKEN;
 
   // Start the actor run and block up to 30s waiting for it to finish.
@@ -79,7 +112,7 @@ async function scrapeTweets(since: string, until: string): Promise<RawTweet[]> {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        searchTerms: SEARCH_QUERIES,
+        searchTerms: queries,
         maxItems: 20,
         lang: 'en',
         since,
@@ -124,7 +157,7 @@ async function scrapeTweets(since: string, until: string): Promise<RawTweet[]> {
     if (tweet_text.length < 30) continue;
 
     const text_lower = tweet_text.toLowerCase();
-    if (!BRAND_KEYWORDS.some(kw => text_lower.includes(kw))) continue;
+    if (!keywords.some(kw => text_lower.includes(kw))) continue;
 
     seen.add(tweet_id);
     results.push({
@@ -222,11 +255,67 @@ Return ONLY valid JSON, no explanation, no markdown:
 }
 `.trim();
 
-async function labelTweet(tweet: RawTweet): Promise<Record<string, string>[]> {
+const EXTERNAL_PROMPT = (text: string) => `
+You are an expert annotation system for aspect-based sentiment analysis of Nigerian fintech tweets.
+Analyse this tweet about competitor fintech products and return structured labels.
+
+PRODUCTS (use these exact names):
+- Cowrywise: savings and investment app
+- OPay: payments, wallet, transfers, POS
+- Moniepoint: business banking, POS, transfers
+- PalmPay: payments and wallet app
+- FairMoney: loans and digital banking
+- Bamboo: stock investing app (aliases: "investbamboo", "bamboo invest")
+
+ASPECTS:
+customer_support, app_performance, payments_transfers, savings_plans, withdrawals,
+investments, loans, fees_charges, trust_security, brand_perception, inquiry, suggestion
+
+SPECIAL RULES:
+- Use "inquiry" aspect when the tweet asks a question about a product
+- Use "suggestion" aspect when the tweet recommends a feature or improvement
+- inquiry/suggestion tweets still get a sentiment score
+
+SENTIMENT OPTIONS: very_negative, slightly_negative, neutral, slightly_positive, very_positive
+INTENT OPTIONS: opinion, complaint, inquiry, suggestion, spam
+
+RULES:
+1. Only detect products clearly mentioned (from the list above, exact names)
+2. Only label aspects clearly discussed
+3. overall_sentiment = general tone of whole tweet
+4. aspect_sentiment = sentiment toward that specific aspect
+5. One entry per aspect detected
+6. If none of the listed products is mentioned, return empty lists
+7. For inquiry/suggestion tweets, include inquiry or suggestion as one of the aspects
+
+Tweet: "${text.replace(/"/g, '\\"')}"
+
+Return ONLY valid JSON, no explanation, no markdown:
+{
+  "products_detected": ["product_name"],
+  "overall_sentiment": "sentiment",
+  "intent": "intent_label",
+  "aspects": [
+    {
+      "aspect_product": "product_name",
+      "aspect": "aspect_name",
+      "aspect_sentiment": "sentiment"
+    }
+  ]
+}
+`.trim();
+
+async function labelTweet(
+  tweet: RawTweet,
+  target: 'piggytech' | 'external',
+): Promise<Record<string, string>[]> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error('GEMINI_API_KEY not set');
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+  const prompt = target === 'external'
+    ? EXTERNAL_PROMPT(tweet.tweet_text)
+    : GEMINI_PROMPT(tweet.tweet_text);
 
   let responseText = '';
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -235,7 +324,7 @@ async function labelTweet(tweet: RawTweet): Promise<Record<string, string>[]> {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: GEMINI_PROMPT(tweet.tweet_text) }] }],
+          contents: [{ parts: [{ text: prompt }] }],
           generationConfig: { temperature: 0.1, maxOutputTokens: 512 },
         }),
       });
@@ -263,6 +352,19 @@ async function labelTweet(tweet: RawTweet): Promise<Record<string, string>[]> {
   } catch {
     console.error(`JSON parse error for tweet ${tweet.tweet_id}:`, responseText.slice(0, 200));
     return [];
+  }
+
+  // For external tweets, normalize product names to canonical casing and drop
+  // anything not in the competitor list (e.g. Gemini returning "Opay" or "piggyvest").
+  if (target === 'external') {
+    const canonical = new Map(EXTERNAL_PRODUCTS.map(p => [p.toLowerCase(), p]));
+    const norm = (p: string | undefined) => canonical.get((p ?? '').toLowerCase().trim()) ?? '';
+    result.products_detected = (result.products_detected ?? [])
+      .map(p => norm(p)).filter(Boolean);
+    result.aspects = (result.aspects ?? [])
+      .map(a => ({ ...a, aspect_product: norm(a.aspect_product) }))
+      .filter(a => a.aspect_product);
+    if (!result.products_detected.length && !result.aspects.length) return [];
   }
 
   const intent = INTENT_LABELS.includes(result.intent) ? result.intent : 'opinion';
@@ -342,13 +444,29 @@ export async function GET(req: NextRequest) {
   // ── Security ────────────────────────────────────────────────────────────────
   const cronSecret = process.env.CRON_SECRET?.trim();
   if (cronSecret) {
+    const bearer = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
     const provided =
       (req.headers.get('x-cron-secret') ??
+      bearer ??
       new URL(req.url).searchParams.get('secret'))?.trim();
     if (provided !== cronSecret) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
   }
+
+  // ── Target: which brand set to scrape ───────────────────────────────────────
+  //   ?target=piggytech (default) → PiggyVest / Pocket / PVB
+  //   ?target=external            → competitors for the comparison sections
+  const targetParam = new URL(req.url).searchParams.get('target') ?? 'piggytech';
+  if (targetParam !== 'piggytech' && targetParam !== 'external') {
+    return NextResponse.json(
+      { ok: false, error: `Invalid target "${targetParam}". Use "piggytech" or "external".` },
+      { status: 400 }
+    );
+  }
+  const target = targetParam as 'piggytech' | 'external';
+  const queries  = target === 'external' ? EXTERNAL_QUERIES  : SEARCH_QUERIES;
+  const keywords = target === 'external' ? EXTERNAL_KEYWORDS : BRAND_KEYWORDS;
 
   // ── Env-var guard — fail fast with a clear message ─────────────────────────
   const missingVars = ['APIFY_API_TOKEN', 'GEMINI_API_KEY', 'GOOGLE_SERVICE_ACCOUNT_KEY'].filter(
@@ -378,12 +496,12 @@ export async function GET(req: NextRequest) {
     if (since === until) {
       since = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     }
-    log.push(`Scraping ${since} → ${until}`);
+    log.push(`Target: ${target} — scraping ${since} → ${until}`);
 
     // ── Scrape ───────────────────────────────────────────────────────────────
     let rawTweets: RawTweet[] = [];
     try {
-      rawTweets = await scrapeTweets(since, until);
+      rawTweets = await scrapeTweets(since, until, queries, keywords);
       log.push(`Scraped ${rawTweets.length} relevant tweets from Apify`);
     } catch (err: any) {
       log.push(`Apify scrape failed: ${err.message}`);
@@ -392,7 +510,7 @@ export async function GET(req: NextRequest) {
 
     if (rawTweets.length === 0) {
       return NextResponse.json({
-        ok: true, scraped: 0, labelled: 0, saved: 0, log,
+        ok: true, target, scraped: 0, labelled: 0, saved: 0, log,
         elapsed_ms: Date.now() - startedAt,
       });
     }
@@ -405,7 +523,7 @@ export async function GET(req: NextRequest) {
 
     if (newTweets.length === 0) {
       return NextResponse.json({
-        ok: true, scraped: rawTweets.length, labelled: 0, saved: 0, log,
+        ok: true, target, scraped: rawTweets.length, labelled: 0, saved: 0, log,
         elapsed_ms: Date.now() - startedAt,
       });
     }
@@ -417,7 +535,7 @@ export async function GET(req: NextRequest) {
 
     for (const tweet of newTweets) {
       try {
-        const rows = await labelTweet(tweet);
+        const rows = await labelTweet(tweet, target);
         if (rows.length > 0) {
           allRows.push(...rows);
           labelledCount++;
@@ -442,6 +560,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
+      target,
       scraped: rawTweets.length,
       new: newTweets.length,
       labelled: labelledCount,
