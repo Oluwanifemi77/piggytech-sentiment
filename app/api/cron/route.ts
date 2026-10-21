@@ -1,7 +1,7 @@
 /**
  * /api/cron/route.ts
  *
- * Automated pipeline — scrape X → clean → label with Gemini → save to Neon DB
+ * Automated pipeline — scrape X → clean → label with Gemini → save to Supabase
  *
  * Triggered hourly by GitHub Actions (.github/workflows/hourly-cron.yml).
  *
@@ -19,11 +19,12 @@
  *   APIFY_API_TOKEN   — Apify account token
  *   GEMINI_API_KEY    — Google AI Studio API key
  *   CRON_SECRET       — A random string you choose
- *   GOOGLE_SERVICE_ACCOUNT_KEY — Stringified JSON of your Google service account key
+ *   SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_INGEST_SECRET — see lib/supabase.ts
+ *   GEMINI_MODEL      — optional, defaults to gemini-3.5-flash-lite
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getBigQuery, BQ_DATASET, BQ_TABLE } from '@/lib/bigquery';
+import { existingTweetIds, insertTweets } from '@/lib/supabase';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -177,15 +178,7 @@ async function scrapeTweets(
 // ─── Step 2: Check existing tweet IDs ────────────────────────────────────────
 
 async function getExistingIds(tweetIds: string[]): Promise<Set<string>> {
-  if (tweetIds.length === 0) return new Set();
-  const bq = getBigQuery();
-  const [rows] = await bq.query({
-    query: `SELECT DISTINCT tweet_id
-            FROM \`${BQ_DATASET}.${BQ_TABLE}\`
-            WHERE tweet_id IN UNNEST(@ids)`,
-    params: { ids: tweetIds },
-  });
-  return new Set(rows.map((r: any) => r.tweet_id as string));
+  return existingTweetIds(tweetIds);
 }
 
 // ─── Step 3: Label with Gemini ────────────────────────────────────────────────
@@ -348,7 +341,7 @@ async function labelTweet(
       }
       break;
     } catch (err: any) {
-      if (!err?.fatal && attempt < 2) await new Promise(r => setTimeout(r, 2 ** attempt * 1000));
+      if (!err?.fatal && attempt < 2) await new Promise(r => setTimeout(r, (String(err?.message).includes('429') ? 10000 : 1000) * 2 ** attempt));
       else throw err;
     }
   }
@@ -418,36 +411,15 @@ async function labelTweet(
   return rows;
 }
 
-// ─── Step 4: Save to Neon DB ─────────────────────────────────────────────────
+// ─── Step 4: Save to Supabase ────────────────────────────────────────────────
 
-async function insertRows(rows: Record<string, string>[]): Promise<number> {
-  if (rows.length === 0) return 0;
-  const bq = getBigQuery();
-  const table = bq.dataset(BQ_DATASET).table(BQ_TABLE);
-  const now = new Date().toISOString();
-
-  const bqRows = rows.map(row => ({
-    tweet_id:          row.tweet_id,
-    tweet_text:        row.tweet_text,
-    author_username:   row.author_username,
-    author_name:       row.author_name,
-    products_detected: row.products_detected,
-    overall_sentiment: row.overall_sentiment,
-    intent:            row.intent,
-    aspect_product:    row.aspect_product,
-    aspect:            row.aspect,
-    aspect_sentiment:  row.aspect_sentiment,
-    created_at:        row.created_at || now,
-    inserted_at:       now,
-  }));
-
-  await table.insert(bqRows, { skipInvalidRows: true, ignoreUnknownValues: true });
-  return bqRows.length;
+async function insertRows(rows: Record<string, string>[], target: string): Promise<number> {
+  return insertTweets(rows.map(r => ({ ...r, target })));
 }
 
 // ─── Main Handler ─────────────────────────────────────────────────────────────
 
-export const maxDuration = 60; // Vercel function timeout (seconds)
+export const maxDuration = 300; // Vercel function timeout (seconds, Fluid compute)
 
 export async function GET(req: NextRequest) {
   // ── Security ────────────────────────────────────────────────────────────────
@@ -478,7 +450,7 @@ export async function GET(req: NextRequest) {
   const keywords = target === 'external' ? EXTERNAL_KEYWORDS : BRAND_KEYWORDS;
 
   // ── Env-var guard — fail fast with a clear message ─────────────────────────
-  const missingVars = ['APIFY_API_TOKEN', 'GEMINI_API_KEY', 'GOOGLE_SERVICE_ACCOUNT_KEY'].filter(
+  const missingVars = ['APIFY_API_TOKEN', 'GEMINI_API_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_INGEST_SECRET'].filter(
     v => !process.env[v]
   );
   if (missingVars.length > 0) {
@@ -542,30 +514,33 @@ export async function GET(req: NextRequest) {
     let labelledCount = 0;
     let skippedCount = 0;
 
-    for (const tweet of newTweets) {
-      try {
-        const rows = await labelTweet(tweet, target);
-        if (rows.length > 0) {
-          allRows.push(...rows);
-          labelledCount++;
-        } else {
+    // Label 3 at a time — fast enough for the function limit, gentle on rate limits
+    let fatal: Error | null = null;
+    const queue = [...newTweets];
+    const worker = async () => {
+      while (queue.length && !fatal) {
+        const tweet = queue.shift()!;
+        try {
+          const rows = await labelTweet(tweet, target);
+          if (rows.length > 0) { allRows.push(...rows); labelledCount++; }
+          else skippedCount++;
+        } catch (err: any) {
+          log.push(`Label failed for ${tweet.tweet_id}: ${err.message}`);
+          if (err?.fatal) fatal = err;
           skippedCount++;
         }
-        await new Promise(r => setTimeout(r, 600));
-      } catch (err: any) {
-        log.push(`Label failed for ${tweet.tweet_id}: ${err.message}`);
-        if (err?.fatal) {
-          return NextResponse.json({ ok: false, target, log, error: err.message }, { status: 500 });
-        }
-        skippedCount++;
       }
+    };
+    await Promise.all([worker(), worker(), worker()]);
+    if (fatal) {
+      return NextResponse.json({ ok: false, target, log, error: (fatal as Error).message }, { status: 500 });
     }
 
     log.push(`Gemini labelled ${labelledCount} tweets, skipped ${skippedCount} (no product detected)`);
 
     // ── Save to DB ───────────────────────────────────────────────────────────
-    const saved = await insertRows(allRows);
-    log.push(`Inserted ${saved} rows into BigQuery`);
+    const saved = await insertRows(allRows, target);
+    log.push(`Inserted ${saved} rows into Supabase`);
 
     const elapsed = Date.now() - startedAt;
     log.push(`Done in ${(elapsed / 1000).toFixed(1)}s`);
