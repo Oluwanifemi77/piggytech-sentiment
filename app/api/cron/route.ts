@@ -80,9 +80,9 @@ function snowflakeToDatetime(tweetId: string): string {
   try {
     const clean = tweetId.replace('tweet-', '');
     const ms = Number(BigInt(clean) >> BigInt(22)) + 1288834974657;
-    return new Date(ms).toISOString().replace('T', ' ').slice(0, 19);
+    return new Date(ms).toISOString().slice(0, 19) + 'Z';
   } catch {
-    return new Date().toISOString().replace('T', ' ').slice(0, 19);
+    return new Date().toISOString().slice(0, 19) + 'Z';
   }
 }
 
@@ -148,8 +148,10 @@ async function scrapeTweets(
   const results: RawTweet[] = [];
 
   for (const t of items) {
-    const tweet_id = String(t.id || t.rest_id || '');
-    if (!tweet_id || seen.has(tweet_id)) continue;
+    const rawId = String(t.id || t.rest_id || '').replace(/^tweet-/, '');
+    if (!rawId) continue;
+    const tweet_id = `tweet-${rawId}`;
+    if (seen.has(tweet_id)) continue;
 
     const raw_text: string = t.text || t.full_text || t.rawContent || '';
     const tweet_text = raw_text.replace(/http\S+/g, '').replace(/\s+/g, ' ').trim();
@@ -312,7 +314,8 @@ async function labelTweet(
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error('GEMINI_API_KEY not set');
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+  const model = process.env.GEMINI_MODEL?.trim() || 'gemini-3.5-flash-lite';
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
   const prompt = target === 'external'
     ? EXTERNAL_PROMPT(tweet.tweet_text)
     : GEMINI_PROMPT(tweet.tweet_text);
@@ -325,11 +328,17 @@ async function labelTweet(
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.1, maxOutputTokens: 512 },
+          generationConfig: { temperature: 0.1, maxOutputTokens: 1024, responseMimeType: 'application/json' },
         }),
       });
 
       const data = await res.json() as any;
+      if (!res.ok || data.error) {
+        const msg = `Gemini ${res.status}: ${data.error?.message ?? 'unknown error'}`;
+        // 4xx (bad key, retired model) won't fix itself on retry — fail loudly
+        if (res.status >= 400 && res.status < 500 && res.status !== 429) throw Object.assign(new Error(msg), { fatal: true });
+        throw new Error(msg);
+      }
       responseText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? '';
 
       if (responseText.startsWith('```')) {
@@ -338,8 +347,8 @@ async function labelTweet(
         responseText = responseText.trim();
       }
       break;
-    } catch (err) {
-      if (attempt < 2) await new Promise(r => setTimeout(r, 2 ** attempt * 1000));
+    } catch (err: any) {
+      if (!err?.fatal && attempt < 2) await new Promise(r => setTimeout(r, 2 ** attempt * 1000));
       else throw err;
     }
   }
@@ -545,6 +554,9 @@ export async function GET(req: NextRequest) {
         await new Promise(r => setTimeout(r, 600));
       } catch (err: any) {
         log.push(`Label failed for ${tweet.tweet_id}: ${err.message}`);
+        if (err?.fatal) {
+          return NextResponse.json({ ok: false, target, log, error: err.message }, { status: 500 });
+        }
         skippedCount++;
       }
     }
@@ -553,7 +565,7 @@ export async function GET(req: NextRequest) {
 
     // ── Save to DB ───────────────────────────────────────────────────────────
     const saved = await insertRows(allRows);
-    log.push(`Inserted ${saved} rows into Neon DB`);
+    log.push(`Inserted ${saved} rows into BigQuery`);
 
     const elapsed = Date.now() - startedAt;
     log.push(`Done in ${(elapsed / 1000).toFixed(1)}s`);
